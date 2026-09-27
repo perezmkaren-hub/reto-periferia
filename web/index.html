@@ -60,6 +60,12 @@
   .graficas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .grafica { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
   .grafica h3, #tablero h2 { margin: 0 0 8px; font-size: 15px; }
+  h3.bloque { margin: 22px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .kpi.rojo { border-left: 4px solid var(--err); } .kpi.ambar { border-left: 4px solid var(--warn); } .kpi.verde { border-left: 4px solid var(--ok); }
+  .kpi small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .decisiones { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; }
+  .decisiones h3 { margin: 0 0 6px; font-size: 15px; }
+  .decisiones li { margin: 6px 0; }
   .semaforo { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13.5px; }
   .semaforo th, .semaforo td { border-bottom: 1px solid var(--border); padding: 7px 8px; text-align: left; }
   .tabla-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
@@ -89,16 +95,28 @@
 <section id="tablero">
   <h2>📊 Tablero del portafolio de contratos <small id="tableroFecha" style="color:var(--muted);font-weight:normal"></small></h2>
   <div class="leyenda"><b>Convención de colores:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>
+
+  <h3 class="bloque">Vista ejecutiva · para la vicepresidencia</h3>
+  <div class="kpis" id="kpisEjecutivos"></div>
+  <div class="decisiones"><h3>🧭 Decisiones que requieren atención de la dirección</h3><ol id="decisiones"></ol></div>
+  <div class="graficas">
+    <div class="grafica"><h3>Valor que vence por trimestre · pipeline de renovación (COP eq.)</h3><canvas id="gTrimestre" height="210"></canvas></div>
+    <div class="grafica"><h3>Valor del portafolio por nivel de riesgo (COP eq.)</h3><canvas id="gRiesgo" height="210"></canvas></div>
+    <div class="grafica"><h3>Concentración por cliente (% del valor vigente)</h3><canvas id="gCliente" height="210"></canvas></div>
+    <div class="grafica"><h3>Valor vigente por comercial (COP eq.)</h3><canvas id="gComercial" height="210"></canvas></div>
+  </div>
+
+  <h3 class="bloque">Vista operativa · para la analista</h3>
   <div class="kpis" id="kpis"></div>
   <div class="graficas">
-    <div class="grafica"><h3>Vencimientos por mes (próximos 12 meses)</h3><canvas id="gVenc" height="200"></canvas></div>
-    <div class="grafica"><h3>Contratos por comercial</h3><canvas id="gComercial" height="200"></canvas></div>
+    <div class="grafica"><h3>Vencimientos por mes (número de contratos)</h3><canvas id="gVenc" height="200"></canvas></div>
     <div class="grafica"><h3>Contratos por país</h3><canvas id="gPais" height="200"></canvas></div>
     <div class="grafica"><h3>Estado de pólizas</h3><canvas id="gPoliza" height="200"></canvas></div>
   </div>
   <h2>Semáforo de riesgo por contrato</h2>
   <div class="leyenda"><b>Convención:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>
   <div class="tabla-scroll"><table class="semaforo" id="semaforo"></table></div>
+  <p class="leyenda" id="notaTasas"></p>
 </section>
 
 <form id="form">
@@ -230,41 +248,139 @@
     if (f.comercial.startsWith("NO REGISTRADO")) return ["🟡", "Comercial no registrado"]
     return ["🟢", "Al día"]
   }
-  function grafica(id, tipo, etiquetas, datos, opciones = {}) {
+  // Tasas de referencia para consolidar en COP. SUPUESTO editable: en producción vendrían de la TRM oficial del día.
+  const TASAS_COP = { COP: 1, USD: 4000, PAB: 4000, PEN: 1100, HNL: 160 }
+  const aCop = (f) => Number(f.valor || 0) * (TASAS_COP[f.moneda] ?? 0)
+  const millones = (v) => `$${Math.round(v / 1e6).toLocaleString("es-CO")} M`
+  const PALETA = ["#2f5bea", "#1f8a5b", "#b7791f", "#c43d3d", "#7a5af8", "#0e9384", "#8a94a6"]
+
+  // Dibuja el valor (y el % en las circulares) sobre cada segmento o barra.
+  const etiquetasDatos = {
+    id: "etiquetasDatos",
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart
+      const ds = chart.data.datasets[0]
+      const total = ds.data.reduce((a, b) => a + b, 0)
+      const formato = chart.$formato ?? ((v) => v.toLocaleString("es-CO"))
+      chart.getDatasetMeta(0).data.forEach((el, i) => {
+        const v = ds.data[i]
+        if (!v) return
+        ctx.save()
+        ctx.font = "600 12px system-ui, sans-serif"
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"
+        if (chart.config.type === "doughnut") {
+          const pct = Math.round((v / total) * 100)
+          if (pct < 4) { ctx.restore(); return }
+          const { x, y } = el.tooltipPosition()
+          ctx.fillStyle = "#fff"
+          ctx.fillText(formato(v), x, y - 7)
+          ctx.font = "11px system-ui, sans-serif"
+          ctx.fillText(`${pct}%`, x, y + 8)
+        } else {
+          const horizontal = chart.options.indexAxis === "y"
+          ctx.fillStyle = "#1d2330"
+          ctx.textAlign = horizontal ? "left" : "center"
+          ctx.fillText(formato(v), horizontal ? el.x + 6 : el.x, horizontal ? el.y : el.y - 9)
+        }
+        ctx.restore()
+      })
+    },
+  }
+
+  function grafica(id, tipo, etiquetas, datos, opcionesEntrada = {}, colores) {
     graficas[id]?.destroy()
-    graficas[id] = new Chart($(id), { type: tipo, data: { labels: etiquetas, datasets: [{ data: datos, backgroundColor: tipo === "bar" ? "#2f5bea" : ["#2f5bea", "#1f8a5b", "#b7791f", "#c43d3d", "#7a5af8", "#0e9384"] }] },
-      options: { plugins: { legend: { display: tipo === "doughnut" } }, ...opciones } })
+    const total = datos.reduce((a, b) => a + b, 0)
+    // El formateador se guarda fuera de las opciones: Chart.js ejecuta como "scriptable" cualquier función en options.
+    const { formatoValor, ...opciones } = opcionesEntrada
+    const formato = formatoValor ?? ((v) => v.toLocaleString("es-CO"))
+    // En las circulares la leyenda también muestra el número.
+    const labels = tipo === "doughnut" ? etiquetas.map((e, i) => `${e}: ${formato(datos[i])} (${total ? Math.round((datos[i] / total) * 100) : 0}%)`) : etiquetas
+    graficas[id] = new Chart($(id), {
+      type: tipo,
+      data: { labels, datasets: [{ data: datos, backgroundColor: colores ?? (tipo === "bar" ? "#2f5bea" : PALETA) }] },
+      options: {
+        layout: { padding: { top: 16, right: tipo === "bar" && opciones.indexAxis === "y" ? 70 : 8 } },
+        plugins: { legend: { display: tipo === "doughnut", position: "bottom", labels: { boxWidth: 12, font: { size: 11.5 } } },
+          tooltip: { callbacks: { label: (c) => ` ${formato(c.raw)}` } } },
+        ...opciones,
+      },
+      plugins: [etiquetasDatos],
+    })
+    graficas[id].$formato = formato
+    graficas[id].update()
   }
   const contar = (arr, k) => arr.reduce((m, x) => (m[x[k] || "—"] = (m[x[k] || "—"] || 0) + 1, m), {})
+  const sumar = (arr, k) => arr.reduce((m, x) => (m[x[k] || "—"] = (m[x[k] || "—"] || 0) + aCop(x), m), {})
+  const trimestre = (iso) => `${iso.slice(0, 4)}-T${Math.floor((Number(iso.slice(5, 7)) - 1) / 3) + 1}`
+  const kpi = (valor, texto, detalle = "", clase = "") => `<div class="kpi ${clase}"><b>${valor}</b><span>${texto}</span>${detalle ? `<small>${detalle}</small>` : ""}</div>`
+
   async function pintarTablero() {
     const res = await fetch("/api/out/sharepoint/maestro-contratos.csv")
     const txt = res.ok ? await res.text() : null
     $("tableroFecha").textContent = res.ok ? `· fecha de referencia ${HOY_TABLERO}` : "· aún no hay datos: procesa el buzón primero"
-    if (!txt) { $("kpis").innerHTML = ""; $("semaforo").innerHTML = ""; return }
-    const m = filasMaestro(txt)
+    if (!txt) { $("kpis").innerHTML = ""; $("kpisEjecutivos").innerHTML = ""; $("semaforo").innerHTML = ""; $("decisiones").innerHTML = ""; return }
+    const m = filasMaestro(txt).map((f) => ({ ...f, riesgo: riesgo(f), cop: aCop(f) }))
     const vigentes = m.filter((f) => f.fecha_fin && dias(f.fecha_fin) >= 0)
-    const porMoneda = vigentes.reduce((acc, f) => (acc[f.moneda] = (acc[f.moneda] || 0) + Number(f.valor || 0), acc), {})
+    const valorVigente = vigentes.reduce((a, f) => a + f.cop, 0)
+    const rojos = m.filter((f) => f.riesgo[0] === "🔴")
+    const valorRiesgo = rojos.reduce((a, f) => a + f.cop, 0)
     const pend = m.filter((f) => f.requiere_poliza === "true" && f.estado_poliza !== "vigente")
-    const pronto = vigentes.filter((f) => dias(f.fecha_fin) <= 60)
+    const valorSinPoliza = pend.reduce((a, f) => a + f.cop, 0)
+    const pronto = vigentes.filter((f) => dias(f.fecha_fin) <= 90)
+    const valorPronto = pronto.reduce((a, f) => a + f.cop, 0)
     const nuevos = m.filter((f) => f.fecha_registro > "2026-05-30")
-    $("kpis").innerHTML = [
-      [vigentes.length, `contratos vigentes de ${m.length}`],
-      [pronto.length, "vencen en ≤ 60 días"],
-      [pend.length, "pólizas exigidas no vigentes"],
-      [nuevos.length, "registrados desde el corte 2026-05-30"],
-      ...Object.entries(porMoneda).map(([mon, v]) => [v.toLocaleString("es-CO"), `valor vigente en ${mon}`]),
-    ].map(([n, t]) => `<div class="kpi"><b>${n}</b><span>${t}</span></div>`).join("")
+    const porCliente = Object.entries(sumar(vigentes, "cliente")).sort((a, b) => b[1] - a[1])
+    const top = porCliente[0]
+    const pctTop = top && valorVigente ? Math.round((top[1] / valorVigente) * 100) : 0
+    const pct = (v) => (valorVigente ? `${Math.round((v / valorVigente) * 100)}% del valor vigente` : "")
 
-    const meses = [...Array(12)].map((_, i) => { const d = new Date(Date.UTC(2026, 8 + i, 1)); return d.toISOString().slice(0, 7) })
+    // ── Vista ejecutiva ──
+    $("kpisEjecutivos").innerHTML = [
+      kpi(millones(valorVigente), "valor del portafolio vigente (COP eq.)", `${vigentes.length} contratos vigentes de ${m.length}`),
+      kpi(millones(valorRiesgo), "valor en riesgo crítico 🔴", `${rojos.length} contratos · vencidos, ≤ 30 días o sin póliza`, "rojo"),
+      kpi(millones(valorPronto), "valor que vence en 90 días", `${pronto.length} contratos a renovar o cerrar · ${pct(valorPronto)}`, "ambar"),
+      kpi(millones(valorSinPoliza), "valor sin garantía constituida", `${pend.length} pólizas exigidas pendientes`, pend.length ? "rojo" : "verde"),
+      kpi(`${pctTop}%`, "concentración en el cliente principal", top ? escapar(top[0]) : "", pctTop >= 30 ? "ambar" : "verde"),
+      kpi(nuevos.length, "contratos nuevos desde el corte", "evidencia de que el gap se está cerrando", "verde"),
+    ].join("")
+
+    const decisiones = []
+    for (const f of m.filter((f) => dias(f.fecha_fin) < 0)) decisiones.push(`🔴 <b>Formalizar terminación o prórroga</b> de ${f.id_contrato} (${escapar(f.cliente)}): venció hace ${-dias(f.fecha_fin)} días y no hay acta. Valor ${millones(f.cop)}. Responsable: ${escapar(f.comercial)}.`)
+    for (const f of vigentes.filter((f) => dias(f.fecha_fin) <= 60).sort((a, b) => dias(a.fecha_fin) - dias(b.fecha_fin))) decisiones.push(`${dias(f.fecha_fin) <= 30 ? "🔴" : "🟡"} <b>Decidir renovación</b> de ${f.id_contrato} (${escapar(f.cliente)}): vence en ${dias(f.fecha_fin)} días (${f.fecha_fin}). Valor ${millones(f.cop)}. Responsable: ${escapar(f.comercial)}.`)
+    if (pend.length) decisiones.push(`🔴 <b>Exigir constitución de ${pend.length} póliza(s)</b> (${pend.map((f) => f.id_contrato).join(", ")}): ${millones(valorSinPoliza)} en contratos sin la garantía que el propio contrato exige.`)
+    if (pctTop >= 30) decisiones.push(`🟡 <b>Riesgo de concentración:</b> ${escapar(top[0])} representa el ${pctTop}% del valor vigente.`)
+    for (const f of m.filter((f) => f.comercial.startsWith("NO REGISTRADO"))) decisiones.push(`🟡 <b>Asignar comercial responsable</b> a ${f.id_contrato} (${escapar(f.cliente)}): lo envió un remitente no registrado.`)
+    $("decisiones").innerHTML = decisiones.map((d) => `<li>${d}</li>`).join("") || "<li>🟢 Sin decisiones pendientes.</li>"
+
+    const trimestres = [...new Set([...Array(4)].map((_, i) => { const d = new Date(Date.parse(HOY_TABLERO)); d.setUTCMonth(d.getUTCMonth() + 3 * i); return trimestre(d.toISOString()) }))]
+    grafica("gTrimestre", "bar", trimestres, trimestres.map((t) => vigentes.filter((f) => trimestre(f.fecha_fin) === t).reduce((a, f) => a + f.cop, 0)), { formatoValor: millones, scales: { y: { ticks: { callback: (v) => millones(v) } } } })
+    const niveles = [["🔴 Crítico", "🔴", "#c43d3d"], ["🟡 Atención", "🟡", "#b7791f"], ["🟢 Al día", "🟢", "#1f8a5b"]]
+    grafica("gRiesgo", "doughnut", niveles.map((n) => n[0]), niveles.map((n) => m.filter((f) => f.riesgo[0] === n[1]).reduce((a, f) => a + f.cop, 0)), { formatoValor: millones }, niveles.map((n) => n[2]))
+    const topClientes = porCliente.slice(0, 5)
+    const resto = porCliente.slice(5).reduce((a, [, v]) => a + v, 0)
+    grafica("gCliente", "doughnut", [...topClientes.map(([c]) => c), ...(resto ? ["Otros"] : [])], [...topClientes.map(([, v]) => v), ...(resto ? [resto] : [])], { formatoValor: millones })
+    const com = Object.entries(sumar(vigentes, "comercial")).sort((a, b) => b[1] - a[1])
+    grafica("gComercial", "bar", com.map(([c]) => (c.startsWith("NO REGISTRADO") ? "⚠️ Sin comercial asignado" : c)), com.map(([, v]) => v), { indexAxis: "y", formatoValor: millones, scales: { x: { ticks: { callback: (v) => millones(v) } } } })
+
+    // ── Vista operativa ──
+    const porMoneda = vigentes.reduce((acc, f) => (acc[f.moneda] = (acc[f.moneda] || 0) + Number(f.valor || 0), acc), {})
+    $("kpis").innerHTML = [
+      kpi(vigentes.length, `contratos vigentes de ${m.length}`),
+      kpi(vigentes.filter((f) => dias(f.fecha_fin) <= 60).length, "vencen en ≤ 60 días", "", "ambar"),
+      kpi(pend.length, "pólizas exigidas no vigentes", "", pend.length ? "rojo" : ""),
+      kpi(nuevos.length, "nuevos desde el corte 2026-05-30", "", "verde"),
+      ...Object.entries(porMoneda).map(([mon, v]) => kpi(v.toLocaleString("es-CO"), `valor vigente en ${mon}`, "moneda original")),
+    ].join("")
+    const meses = [...Array(12)].map((_, i) => { const d = new Date(Date.parse(HOY_TABLERO)); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + i); return d.toISOString().slice(0, 7) })
     grafica("gVenc", "bar", meses, meses.map((mm) => m.filter((f) => f.fecha_fin.startsWith(mm)).length), { scales: { y: { ticks: { stepSize: 1 } } } })
-    const com = contar(m, "comercial"); grafica("gComercial", "bar", Object.keys(com), Object.values(com), { indexAxis: "y", scales: { x: { ticks: { stepSize: 1 } } } })
     const pa = contar(m, "pais"); grafica("gPais", "doughnut", Object.keys(pa), Object.values(pa))
     const po = contar(m, "estado_poliza"); grafica("gPoliza", "doughnut", Object.keys(po), Object.values(po))
 
     const orden = { "🔴": 0, "🟡": 1, "🟢": 2 }
-    const filas = m.map((f) => [riesgo(f), f]).sort((a, b) => orden[a[0][0]] - orden[b[0][0]])
-    $("semaforo").innerHTML = `<tr><th></th><th>Contrato</th><th>Cliente</th><th>Fin</th><th>Valor</th><th>Comercial</th><th>Motivo</th></tr>` +
-      filas.map(([[s, motivo], f]) => `<tr><td>${s}</td><td>${escapar(f.id_contrato)}</td><td>${escapar(f.cliente)}</td><td>${f.fecha_fin}</td><td>${Number(f.valor).toLocaleString("es-CO")} ${f.moneda}</td><td>${escapar(f.comercial)}</td><td>${escapar(motivo)}</td></tr>`).join("")
+    const filas = [...m].sort((a, b) => orden[a.riesgo[0]] - orden[b.riesgo[0]] || b.cop - a.cop)
+    $("semaforo").innerHTML = `<tr><th></th><th>Contrato</th><th>Cliente</th><th>Fin</th><th>Valor</th><th>COP eq.</th><th>Comercial</th><th>Motivo</th></tr>` +
+      filas.map((f) => `<tr><td>${f.riesgo[0]}</td><td>${escapar(f.id_contrato)}</td><td>${escapar(f.cliente)}</td><td>${f.fecha_fin}</td><td>${Number(f.valor).toLocaleString("es-CO")} ${f.moneda}</td><td>${millones(f.cop)}</td><td>${escapar(f.comercial)}</td><td>${escapar(f.riesgo[1])}</td></tr>`).join("")
+    $("notaTasas").innerHTML = `<b>Supuesto de consolidación:</b> valores convertidos a COP con tasas de referencia (USD y PAB ${TASAS_COP.USD.toLocaleString("es-CO")} · PEN ${TASAS_COP.PEN.toLocaleString("es-CO")} · HNL ${TASAS_COP.HNL}). En producción se usaría la TRM oficial del día. Los contratos por demanda (valor 0) no suman valor.`
   }
   $("verTablero").onclick = () => {
     const activo = document.body.classList.toggle("ver-tablero")
@@ -282,7 +398,7 @@
       r.vencen_30 && `🔴 ${r.vencen_30} vence(n) en ≤ 30 días`,
       r.polizas_pendientes && `🔴 ${r.polizas_pendientes} póliza(s) pendiente(s)`,
       r.vencen_60 && `🟡 ${r.vencen_60} vence(n) en 31–60 días`,
-      r.registrados_desde_corte && `🟢 ${r.registrados_desde_corte} registrado(s) desde el corte`,
+      r.registrados_desde_corte && `🟢 ${r.registrados_desde_corte} nuevo(s) o actualizado(s) desde el corte`,
     ].filter(Boolean)
     el.className = a.criticos ? "critico" : a.atencion ? "atencion" : "ok"
     el.innerHTML = `<b>🔔 Avisos al ${a.hoy}:</b> ${partes.join(" · ") || "🟢 todo al día"} <u>Ver tablero →</u>`
