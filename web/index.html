@@ -60,6 +60,10 @@
   .graficas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .grafica { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
   .grafica h3, #tablero h2 { margin: 0 0 8px; font-size: 15px; }
+  .vistas { display: inline-flex; gap: 4px; background: #eceff4; padding: 4px; border-radius: 10px; margin: 6px 0 16px; }
+  .vistas .vista { border: none; background: transparent; border-radius: 8px; padding: 8px 16px; font-weight: 600; color: var(--muted); }
+  .vistas .vista small { font-weight: 400; margin-left: 4px; }
+  .vistas .vista.activa { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
   h3.bloque { margin: 22px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
   .kpi.rojo { border-left: 4px solid var(--err); } .kpi.ambar { border-left: 4px solid var(--warn); } .kpi.verde { border-left: 4px solid var(--ok); }
   .kpi small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -96,7 +100,12 @@
   <h2>📊 Tablero del portafolio de contratos <small id="tableroFecha" style="color:var(--muted);font-weight:normal"></small></h2>
   <div class="leyenda"><b>Convención de colores:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>
 
-  <h3 class="bloque">Vista ejecutiva · para la vicepresidencia</h3>
+  <div class="vistas" role="tablist">
+    <button type="button" class="vista activa" data-vista="ejecutiva" role="tab">🏛️ Vista ejecutiva <small>vicepresidencia</small></button>
+    <button type="button" class="vista" data-vista="operativa" role="tab">🛠️ Vista operativa <small>analista</small></button>
+  </div>
+
+  <div id="vistaEjecutiva">
   <div class="kpis" id="kpisEjecutivos"></div>
   <div class="decisiones"><h3>🧭 Decisiones que requieren atención de la dirección</h3><ol id="decisiones"></ol></div>
   <div class="graficas">
@@ -106,7 +115,10 @@
     <div class="grafica"><h3>Valor vigente por comercial (COP eq.)</h3><canvas id="gComercial" height="210"></canvas></div>
   </div>
 
-  <h3 class="bloque">Vista operativa · para la analista</h3>
+  <p class="leyenda" id="notaTasas"></p>
+  </div>
+
+  <div id="vistaOperativa" hidden>
   <div class="kpis" id="kpis"></div>
   <div class="graficas">
     <div class="grafica"><h3>Vencimientos por mes (número de contratos)</h3><canvas id="gVenc" height="200"></canvas></div>
@@ -116,7 +128,7 @@
   <h2>Semáforo de riesgo por contrato</h2>
   <div class="leyenda"><b>Convención:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>
   <div class="tabla-scroll"><table class="semaforo" id="semaforo"></table></div>
-  <p class="leyenda" id="notaTasas"></p>
+  </div>
 </section>
 
 <form id="form">
@@ -382,6 +394,14 @@
       filas.map((f) => `<tr><td>${f.riesgo[0]}</td><td>${escapar(f.id_contrato)}</td><td>${escapar(f.cliente)}</td><td>${f.fecha_fin}</td><td>${Number(f.valor).toLocaleString("es-CO")} ${f.moneda}</td><td>${millones(f.cop)}</td><td>${escapar(f.comercial)}</td><td>${escapar(f.riesgo[1])}</td></tr>`).join("")
     $("notaTasas").innerHTML = `<b>Supuesto de consolidación:</b> valores convertidos a COP con tasas de referencia (USD y PAB ${TASAS_COP.USD.toLocaleString("es-CO")} · PEN ${TASAS_COP.PEN.toLocaleString("es-CO")} · HNL ${TASAS_COP.HNL}). En producción se usaría la TRM oficial del día. Los contratos por demanda (valor 0) no suman valor.`
   }
+  // Pestañas del tablero: una sola vista visible a la vez.
+  document.querySelectorAll(".vistas .vista").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".vistas .vista").forEach((x) => x.classList.toggle("activa", x === b))
+    $("vistaEjecutiva").hidden = b.dataset.vista !== "ejecutiva"
+    $("vistaOperativa").hidden = b.dataset.vista !== "operativa"
+    Object.values(graficas).forEach((g) => g.resize())
+  }))
+
   $("verTablero").onclick = () => {
     const activo = document.body.classList.toggle("ver-tablero")
     $("verTablero").textContent = activo ? "💬 Volver al chat" : "📊 Tablero"
