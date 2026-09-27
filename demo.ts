@@ -3,7 +3,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { leer_buzon, extraer, validar, registrar, alertas, type Contrato } from "./src/tools/contratos.ts"
+import { leer_buzon, extraer, validar, registrar, alertas, monedaDesconocida, type Contrato } from "./src/tools/contratos.ts"
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const ctx = { directory, sessionId: "demo" }
@@ -66,7 +66,8 @@ async function main() {
   const malo = parse(await extraer.execute({ mensaje_id: "msg-999" }, ctx))
   console.log(`🧪 Mensaje inexistente → ${malo.ok ? "ok" : `{ ok: false, error: "${malo.error}" }`}`)
   const fechaMala = parse(await alertas.execute({ hoy: "2026-13-45" }, ctx))
-  console.log(`🧪 Fecha inválida     → ${fechaMala.ok ? "ok" : `{ ok: false, error: "${fechaMala.error}" }`}\n`)
+  console.log(`🧪 Fecha inválida     → ${fechaMala.ok ? "ok" : `{ ok: false, error: "${fechaMala.error}" }`}`)
+  console.log(`🧪 Moneda desconocida → detectada: ${monedaDesconocida("SEGUNDA. VALOR. El valor es de (EUR 50.000,00).")}\n`)
 
   const al = parse<{ ruta: string; vencen: unknown[]; polizas_pendientes: unknown[]; registrados_desde_corte: unknown[] }>(
     await alertas.execute({ hoy: HOY }, ctx),

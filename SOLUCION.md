@@ -20,20 +20,26 @@ Desde el 30 de mayo de 2026 Periferia no sabe con certeza qué contratos tiene v
 ## 2. Arquitectura
 
 ```
-┌──────────────────┐  POST /api/chat   ┌────────────────────────────────────────────┐
-│ Front (web/)     │ ────────────────▶ │ Backend (src/server.ts · Hono)             │
-│ · historial      │ ◀──────────────── │  └─ Ciclo del agente (src/agente.ts)       │
-│ · tool calls 🔧  │ reply, toolCalls, │      ├─ Adaptador LLM (src/llm/adapter.ts) │
-│ · ⏸ confirmación │ needsConfirmation │      │    └─ Gemini (src/llm/gemini.ts)     │
-└──────────────────┘                   │      └─ Herramientas zod (src/tools/)      │
-                                       └───────────┬─────────────────┬──────────────┘
-                                                   │                 │
-                                       fixtures/ (solo lectura)   out/ (escritura)
-                                       buzón, maestro, comerciales  sharepoint/maestro-contratos.csv
-                                                                    sharepoint/Contratos/<año>/<cliente>/
-                                                                    sharepoint/historial.jsonl
-                                                                    procesados.json · log.jsonl · alertas.md
+┌──────────────────────┐ POST /api/chat    ┌────────────────────────────────────────────┐
+│ Front (web/)         │ ────────────────▶ │ Backend (src/server.ts · Hono)             │
+│ · 💬 chat            │ ◀──────────────── │  ├─ Ciclo del agente (src/agente.ts)       │
+│   - tool calls 🔧    │ reply, toolCalls, │  │    ├─ Adaptador LLM (src/llm/adapter.ts)│
+│   - ⏸ confirmación   │ needsConfirmation │  │    │    └─ Gemini (src/llm/gemini.ts)    │
+│ · 🔔 aviso proactivo │ ◀── GET /api/avisos ─┤  │    └─ Herramientas zod (src/tools/)   │
+│ · 📊 tablero         │ ◀── GET /api/out/…  ─┤  └─ Avisos (src/avisos.ts) ⏰ cada 24 h  │
+└──────────────────────┘                   └───────────┬─────────────────┬──────────────┘
+                                                       │                 │
+                                           fixtures/ (solo lectura)   out/ (escritura)
+                                           buzón, maestro, comerciales  sharepoint/maestro-contratos.csv
+                                                                        sharepoint/Contratos/<año>/<cliente>/
+                                                                        sharepoint/historial.jsonl
+                                                                        procesados.json · log.jsonl · alertas.md
+                                                                        bandeja-salida/<fecha>/*.md (correos)
+
+modulo/  ← generado desde agent/prompt.md + src/tools/contratos.ts + src/knowledge/ (bonus §9.4)
 ```
+
+**Capa de análisis (valor agregado):** el agente deja el maestro estructurado, así que el front incluye un **📊 Tablero** que lo analiza sin pasar por el modelo (costo cero): indicadores (vigentes, vencen ≤ 60 días, pólizas pendientes, registrados desde el corte, valor vigente por moneda), gráficas de vencimientos por mes, contratos por comercial, por país y estado de pólizas, y un **semáforo de riesgo por contrato**. Responde de un vistazo la pregunta de gerencia del PRD: *"¿qué contratos vencen este trimestre?"*.
 
 **Separación que pide el PRD (§6.5):**
 
@@ -66,6 +72,22 @@ El servidor no contiene reglas de negocio: solo expone la API y ejecuta el ciclo
 | Interfaz | La respuesta trae `needsConfirmation: true` y el chat resalta la burbuja y la caja de texto en ámbar ("⏸ El agente necesita tu confirmación"). |
 
 **Errores (CA5):** reintentos automáticos ante saturación del proveedor (429/503) con modelo de respaldo, timeout configurable, y si aun así falla, el agente responde en lenguaje claro qué alcanzó a hacer y la sesión sigue viva ("escríbeme *continúa*").
+
+**Avisos proactivos (las alertas no esperan a que alguien pregunte):**
+
+| Momento | Qué pasa |
+|---|---|
+| Al abrir el chat y después de cada turno | Banda **🔔 Avisos** arriba del chat con el semáforo (vencidos, vencen ≤ 30 / 31–60 días, pólizas pendientes). Un clic abre el tablero. |
+| Cada 24 h (y al arrancar el servidor) | `src/avisos.ts` regenera `out/alertas.md` y escribe en `out/bandeja-salida/<fecha>/` el correo consolidado para **gerencia** y uno **por comercial** con sus contratos pendientes. En producción esa bandeja se reemplaza por envío real vía Microsoft Graph (correo o Teams). |
+| Bajo demanda | El usuario pide alertas en el chat y el agente llama `contratos_alertas`. |
+
+**Convenciones de color (en chat, tablero, maestro, alertas y correos):**
+
+| Uso | Convención |
+|---|---|
+| Clasificación de mensajes | 🟢 nuevo · 🔵 actualización · ⚪ duplicado · 🔴 rechazado · 🟡 requiere confirmación |
+| Semáforo de riesgo | 🔴 crítico: vencido, vence en ≤ 30 días o póliza exigida sin constituir · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día |
+| Estado de la conversación | Burbuja y caja de texto en ámbar = el agente espera tu confirmación |
 
 **Costo:** tope de iteraciones por turno y de tokens por sesión (`MAX_TOKENS_SESION`), ambos configurables.
 
@@ -113,16 +135,29 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 
 **Clasificación (RN1–RN4):** búsqueda por `id_contrato`; si no, por `nit_cliente` + similitud de objeto ≥ 0.9 (coeficiente de Dice sobre bigramas). Mismo id y mismos valor/fechas → **duplicado**; otrosí o campos distintos → **actualización** (con `diferencias` antes/después); sin coincidencia → **nuevo**; sin adjunto de contrato o sin partes/objeto → **rechazado**.
 
-**Resultado sobre los 6 casos (`npm run demo`):**
+**Trazabilidad de reglas del PRD:**
+
+| Regla | Dónde se cumple |
+|---|---|
+| RN1 duplicado | `clasificar()` compara id + valor + fechas; `registrar` no escribe |
+| RN2 actualización | Por id, o NIT + similitud de objeto ≥ 0.9, u otrosí; `historial.jsonl` con antes/después |
+| RN3 nuevo | Sin coincidencia → inserta |
+| RN4 rechazado | Sin adjunto de contrato o sin partes/objeto; motivo explícito |
+| RN5 confianza < 0.8 | `requiere_revision`; `registrar` exige `confirmado=true` + guardia en el ciclo |
+| RN6 fixture de solo lectura | Se copia a `out/sharepoint/` en la primera ejecución |
+| RN7 log | Toda llamada escribe `out/log.jsonl` `{ ts, herramienta, mensaje_id, ok, resumen }` |
+| CA1–CA5 | Tope 25 pasos · valores solo de herramientas · confirmación en turno posterior · tool calls visibles + log · errores en lenguaje claro sin matar la sesión |
+
+**Resultado sobre los 6 casos (`npm run demo`)** · 🟢 nuevo · 🔵 actualización · ⚪ duplicado · 🔴 rechazado · 🟡 requiere confirmación
 
 | Mensaje | Esperado (PRD §7.4) | Obtenido |
 |---|---|---|
-| msg-001 | nuevo, registrado, póliza pendiente | ✅ CT-2026-015 insertado · cumplimiento · pendiente |
-| msg-002 | nuevo, registrado, no_aplica | ✅ CT-2026-016 insertado · no_aplica |
-| msg-003 | actualización, fila modificada, historial | ✅ CT-2026-011: valor 350.000→520.000 PEN, fin 2027-05-01→2027-11-01, historial; póliza → pendiente (debe ampliarse) |
-| msg-004 | duplicado, sin escritura | ✅ duplicado de CT-2026-012, sin escritura |
-| msg-005 | rechazado | ✅ rechazado: adjunto es una cotización |
-| msg-006 | nuevo con revisión (valor, fecha_fin) | ✅ nuevo · revisión: valor, fecha_fin · remitente no registrado (advertencia, no bloquea) · se registra solo tras confirmar valor 0 y fin 2027-08-31 |
+| 🟢 msg-001 | nuevo, registrado, póliza pendiente | ✅ CT-2026-015 insertado · cumplimiento · pendiente |
+| 🟢 msg-002 | nuevo, registrado, no_aplica | ✅ CT-2026-016 insertado · no_aplica |
+| 🔵 msg-003 | actualización, fila modificada, historial | ✅ CT-2026-011: valor 350.000→520.000 PEN, fin 2027-05-01→2027-11-01, historial; póliza → pendiente (debe ampliarse) |
+| ⚪ msg-004 | duplicado, sin escritura | ✅ duplicado de CT-2026-012, sin escritura |
+| 🔴 msg-005 | rechazado | ✅ rechazado: adjunto es una cotización |
+| 🟡 msg-006 | nuevo con revisión (valor, fecha_fin) | ✅ nuevo · revisión: valor, fecha_fin · remitente no registrado (advertencia, no bloquea) · se registra solo tras confirmar valor 0 y fin 2027-08-31 |
 
 ---
 
@@ -205,15 +240,17 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 
 | Historia | Estado | Evidencia / qué falta para producción |
 |---|---|---|
-| HU-1 Leer el buzón | ✅ Hecho | `contratos_leer_buzon` excluye `out/procesados.json` |
+| HU-1 Leer el buzón | ✅ Hecho | `contratos_leer_buzon` excluye `out/procesados.json` y marca desde la lectura los mensajes sin contrato como `rechazado` con motivo |
 | HU-2 Extraer | ✅ Hecho | Confianza por campo; nulos con 0. Falta: OCR y PDF nativo (P1) |
 | HU-3 Validar y clasificar | ✅ Hecho | RN1–RN5, `diferencias`, remitente desconocido no bloquea |
 | HU-4 Registrar y archivar | ✅ Hecho | Maestro en `out/sharepoint`, archivo por año/cliente, `historial.jsonl`, `procesados.json`. Falta: Microsoft Graph real |
 | HU-5 Alertas | ✅ Hecho | `out/alertas.md` con las 3 secciones (+ vencidos sin acta) y fecha `hoy` como argumento |
-| HU-6 Errores | ✅ Hecho | `{ ok:false, error }`; demo prueba mensaje inexistente y fecha inválida; el lote no se aborta |
+| HU-6 Errores | ✅ Hecho | `{ ok:false, error }`; demo prueba mensaje inexistente, fecha inválida y moneda desconocida; el lote no se aborta |
 | Front con tool calls y confirmación | ✅ Hecho | `web/index.html` |
 | Link público | ✅ Render | Ver README |
-| Bonus módulo reutilizable | ⏳ No hecho | Priorizado el núcleo evaluado dentro del tiempo |
+| Bonus módulo reutilizable | ✅ Hecho | `modulo/` con `agent.md`, `tools/contratos.ts` y `skill/registro-contratos/SKILL.md`, **generados** desde las mismas fuentes de la app (`npm run modulo`); `npm run modulo:verificar` falla si divergen |
+| Avisos proactivos | ✅ Extra | Banda de avisos en el chat + resumen diario con correos simulados a gerencia y comerciales |
+| Tablero de análisis | ✅ Extra | KPIs, 4 gráficas y semáforo por contrato |
 | `contratos_leer_pdf` (P1) | ⏳ No hecho | Opcional |
 
 ---

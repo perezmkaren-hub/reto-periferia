@@ -45,6 +45,11 @@
   .sugerencias { max-width: 920px; margin: 0 auto 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   .sugerencias button { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; }
   .vacio { color: var(--muted); text-align: center; margin-top: 60px; }
+  #aviso { display: none; max-width: 920px; margin: 12px auto 0; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; }
+  #aviso.critico { display: block; background: #fdecec; border: 1px solid var(--err); }
+  #aviso.atencion { display: block; background: var(--warn-bg); border: 1px solid var(--warn); }
+  #aviso.ok { display: block; background: #e8f5ee; border: 1px solid var(--ok); }
+  .leyenda { font-size: 12.5px; color: var(--muted); margin: 6px 0 12px; }
   #tablero { display: none; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
   body.ver-tablero #tablero { display: block; }
   body.ver-tablero main, body.ver-tablero form { display: none; }
@@ -75,12 +80,15 @@
   </div>
 </header>
 
+<div id="aviso" title="Abrir el tablero"></div>
+
 <main id="chat">
   <div class="vacio" id="vacio">Escribe una instrucción o usa una sugerencia. Cada llamada a herramienta se verá aquí.</div>
 </main>
 
 <section id="tablero">
   <h2>📊 Tablero del portafolio de contratos <small id="tableroFecha" style="color:var(--muted);font-weight:normal"></small></h2>
+  <div class="leyenda"><b>Convención de colores:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>
   <div class="kpis" id="kpis"></div>
   <div class="graficas">
     <div class="grafica"><h3>Vencimientos por mes (próximos 12 meses)</h3><canvas id="gVenc" height="200"></canvas></div>
@@ -89,6 +97,7 @@
     <div class="grafica"><h3>Estado de pólizas</h3><canvas id="gPoliza" height="200"></canvas></div>
   </div>
   <h2>Semáforo de riesgo por contrato</h2>
+  <div class="leyenda"><b>Convención:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>
   <div class="tabla-scroll"><table class="semaforo" id="semaforo"></table></div>
 </section>
 
@@ -150,6 +159,7 @@
       r.toolCalls.forEach(herramienta)
       burbuja(r.needsConfirmation ? "confirmar" : "", marked.parse(r.reply))
       modoConfirmacion(r.needsConfirmation)
+      refrescarAviso()
       $("estado").textContent = `${estadoBase} · ${r.tokensUsados.toLocaleString("es-CO")} tokens en esta sesión`
     } catch (e) {
       pensando.remove()
@@ -167,11 +177,11 @@
     const cuerpo = ruta.endsWith(".csv") ? csvATabla(txt) : marked.parse(txt)
     burbuja("", `<b>${titulo}</b>` + cuerpo)
   }
+  const LEYENDA = `<div class="leyenda"><b>Convención:</b> 🔴 crítico: actuar ya (vencido, vence en ≤ 30 días o póliza exigida sin constituir) · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día</div>`
   function csvATabla(csv) {
-    const filas = csv.trim().split("\n").map((l) => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).slice(0, -1).map((c) => c.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"')))
     const cols = ["id_contrato", "cliente", "valor", "moneda", "fecha_inicio", "fecha_fin", "estado_poliza", "comercial", "fuente"]
-    const idx = cols.map((c) => filas[0].indexOf(c))
-    return `<table><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${filas.slice(1).map((f) => `<tr>${idx.map((i) => `<td>${escapar(f[i] ?? "")}</td>`).join("")}</tr>`).join("")}</table>`
+    const m = filasMaestro(csv)
+    return LEYENDA + `<table><tr><th></th>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${m.map((f) => { const [sem, motivo] = riesgo(f); return `<tr><td title="${escapar(motivo)}">${sem}</td>${cols.map((c) => `<td>${escapar(f[c] ?? "")}</td>`).join("")}</tr>` }).join("")}</table>`
   }
 
   form.addEventListener("submit", (e) => { e.preventDefault(); enviar(entrada.value) })
@@ -185,10 +195,12 @@
     sessionId = crypto.randomUUID(); sessionStorage.setItem("sessionId", sessionId)
     chat.innerHTML = '<div class="vacio" id="vacio">Demo reiniciada. El maestro volvió al estado del 2026-05-30.</div>'
     modoConfirmacion(false)
+    refrescarAviso()
   }
 
   // ─── Tablero: analiza el maestro que alimenta el agente ───
-  const HOY_TABLERO = "2026-09-03"
+  let HOY_TABLERO = "2026-09-03"
+  fetch("/api/avisos").then((r) => r.json()).then((a) => { if (a?.hoy) HOY_TABLERO = a.hoy }).catch(() => {})
   const graficas = {}
   function filasMaestro(csv) {
     const filas = csv.trim().split("\n").map((l) => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).slice(0, -1).map((c) => c.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"')))
@@ -196,6 +208,15 @@
     return filas.slice(1).map((f) => Object.fromEntries(cab.map((h, i) => [h, f[i] ?? ""])))
   }
   const dias = (iso) => Math.round((Date.parse(iso) - Date.parse(HOY_TABLERO)) / 86400000)
+  function riesgo(f) {
+    const d = dias(f.fecha_fin)
+    if (d < 0) return ["🔴", `Vencido hace ${-d} días sin acta de terminación`]
+    if (f.requiere_poliza === "true" && f.estado_poliza !== "vigente") return ["🔴", `Póliza ${f.tipo_poliza} ${f.estado_poliza}`]
+    if (d <= 30) return ["🔴", `Vence en ${d} días`]
+    if (d <= 60) return ["🟡", `Vence en ${d} días`]
+    if (f.comercial.startsWith("NO REGISTRADO")) return ["🟡", "Comercial no registrado"]
+    return ["🟢", "Al día"]
+  }
   function grafica(id, tipo, etiquetas, datos, opciones = {}) {
     graficas[id]?.destroy()
     graficas[id] = new Chart($(id), { type: tipo, data: { labels: etiquetas, datasets: [{ data: datos, backgroundColor: tipo === "bar" ? "#2f5bea" : ["#2f5bea", "#1f8a5b", "#b7791f", "#c43d3d", "#7a5af8", "#0e9384"] }] },
@@ -227,14 +248,6 @@
     const pa = contar(m, "pais"); grafica("gPais", "doughnut", Object.keys(pa), Object.values(pa))
     const po = contar(m, "estado_poliza"); grafica("gPoliza", "doughnut", Object.keys(po), Object.values(po))
 
-    const riesgo = (f) => {
-      const d = dias(f.fecha_fin)
-      if (d < 0) return ["🔴", `Vencido hace ${-d} días sin acta de terminación`]
-      if (f.requiere_poliza === "true" && f.estado_poliza !== "vigente") return ["🔴", `Póliza ${f.tipo_poliza} ${f.estado_poliza}`]
-      if (d <= 60) return ["🟡", `Vence en ${d} días`]
-      if (f.comercial.startsWith("NO REGISTRADO")) return ["🟡", "Comercial no registrado"]
-      return ["🟢", "Al día"]
-    }
     const orden = { "🔴": 0, "🟡": 1, "🟢": 2 }
     const filas = m.map((f) => [riesgo(f), f]).sort((a, b) => orden[a[0][0]] - orden[b[0][0]])
     $("semaforo").innerHTML = `<tr><th></th><th>Contrato</th><th>Cliente</th><th>Fin</th><th>Valor</th><th>Comercial</th><th>Motivo</th></tr>` +
@@ -245,6 +258,24 @@
     $("verTablero").textContent = activo ? "💬 Volver al chat" : "📊 Tablero"
     if (activo) pintarTablero()
   }
+
+  async function refrescarAviso() {
+    const a = await fetch("/api/avisos").then((r) => r.json()).catch(() => null)
+    const el = $("aviso")
+    if (!a?.ok) { el.className = ""; return }
+    const r = a.resumen
+    const partes = [
+      r.vencidos && `🔴 ${r.vencidos} vencido(s) sin acta`,
+      r.vencen_30 && `🔴 ${r.vencen_30} vence(n) en ≤ 30 días`,
+      r.polizas_pendientes && `🔴 ${r.polizas_pendientes} póliza(s) pendiente(s)`,
+      r.vencen_60 && `🟡 ${r.vencen_60} vence(n) en 31–60 días`,
+      r.registrados_desde_corte && `🟢 ${r.registrados_desde_corte} registrado(s) desde el corte`,
+    ].filter(Boolean)
+    el.className = a.criticos ? "critico" : a.atencion ? "atencion" : "ok"
+    el.innerHTML = `<b>🔔 Avisos al ${a.hoy}:</b> ${partes.join(" · ") || "🟢 todo al día"} <u>Ver tablero →</u>`
+  }
+  $("aviso").onclick = () => { if (!document.body.classList.contains("ver-tablero")) $("verTablero").click() }
+  refrescarAviso()
 
   let estadoBase = ""
   fetch("/api/health").then((r) => r.json()).then((h) => {

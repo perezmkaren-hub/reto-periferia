@@ -1,3 +1,8 @@
+---
+name: registro-contratos
+description: Conocimiento del proceso de registro de contratos vigentes de Periferia (reglas RN1–RN5, campos del maestro, pólizas, alertas y dueños). Úsalo al procesar el buzón de contratos o responder sobre vencimientos y pólizas.
+---
+
 # Proceso de registro de contratos vigentes
 
 ## Contexto

@@ -34,6 +34,7 @@ Procesa los 6 mensajes llamando directamente a las herramientas (sin clave, sin 
 | `MAX_ITERACIONES` | No | Tope de pasos herramienta→modelo por turno (25). |
 | `MAX_TOKENS_SESION` | No | Tope de tokens por sesión (400.000). |
 | `LLM_TIMEOUT_MS` | No | Timeout por llamada al modelo (60.000 ms). |
+| `FECHA_REFERENCIA` | No | Fecha simulada para avisos y tablero (`2026-09-03` en la demo). Vacía = fecha real. |
 
 ## API
 
@@ -42,8 +43,18 @@ Procesa los 6 mensajes llamando directamente a las herramientas (sin clave, sin 
 | `POST` | `/api/chat` | `{ sessionId, message }` → `{ reply, toolCalls[], needsConfirmation, pendientes[], tokensUsados }` |
 | `GET` | `/api/sessions/:id` | Historial completo (mensajes, llamadas a herramientas, errores) |
 | `GET` | `/api/health` | `{ ok, provider, model, llave_configurada }` (nunca la clave) |
+| `GET` | `/api/avisos` | Resumen del semáforo de alertas (lo usa la banda 🔔 del chat) |
 | `POST` | `/api/reset` | Borra `out/` para repetir la demo desde el maestro original |
 | `GET` | `/api/out/<ruta>` | Lee un artefacto generado (`alertas.md`, `sharepoint/maestro-contratos.csv`) |
+
+## Módulo reutilizable (bonus)
+
+```bash
+npm run modulo            # genera modulo/ desde las fuentes de la app
+npm run modulo:verificar  # falla si modulo/ difiere de lo que usa la app
+```
+
+Ver [modulo/README.md](modulo/README.md).
 
 ## Estructura
 
@@ -53,8 +64,10 @@ src/knowledge/registro-contratos.md  conocimiento del proceso
 src/tools/contratos.ts            ejecución: herramientas tipadas con zod
 src/agente.ts                     ciclo del agente (independiente del proveedor)
 src/llm/adapter.ts, gemini.ts     adaptador del modelo
+src/avisos.ts                     avisos proactivos y resumen diario
 src/server.ts                     API HTTP
-web/index.html                    chat
+web/index.html                    chat + banda de avisos + tablero
+modulo/                           bonus: agente empaquetado (generado)
 demo.ts                           verificación sin modelo
 fixtures/                         insumos (solo lectura)
 out/                              generado en ejecución (no se versiona)

@@ -8,7 +8,9 @@
     "demo": "tsx demo.ts",
     "dev": "tsx src/server.ts",
     "start": "tsx src/server.ts",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "modulo": "tsx scripts/construir-modulo.ts",
+    "modulo:verificar": "tsx scripts/construir-modulo.ts --verificar"
   },
   "keywords": [],
   "author": "",

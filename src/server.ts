@@ -10,6 +10,7 @@ import { serveStatic } from "@hono/node-server/serve-static"
 import { z } from "zod"
 import { GeminiLLM } from "./llm/gemini.ts"
 import { cargarSistema, ejecutarTurno, type Sesion } from "./agente.ts"
+import { generarAvisos } from "./avisos.ts"
 
 const directorio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const config = {
@@ -57,6 +58,9 @@ app.post("/api/chat", async (c) => {
   }
 })
 
+// Avisos proactivos: el front los consulta al abrir y después de cada turno.
+app.get("/api/avisos", async (c) => c.json(await generarAvisos(directorio, fechaReferencia())))
+
 app.get("/api/sessions/:id", (c) => {
   const s = sesiones.get(c.req.param("id"))
   if (!s) return c.json({ ok: false, error: "Sesión no encontrada" }, 404)
@@ -82,6 +86,14 @@ app.get("/api/out/:archivo{.+}", async (c) => {
 })
 
 app.use("/*", serveStatic({ root: path.relative(process.cwd(), path.join(directorio, "web")) || "web" }))
+
+// Fecha simulada de la demo (PRD §11). En producción se omite y se usa la fecha real.
+const fechaReferencia = () => process.env.FECHA_REFERENCIA || new Date().toISOString().slice(0, 10)
+
+// Resumen diario automático: genera alertas.md y los correos que saldrían a gerencia y comerciales.
+const resumenDiario = () => generarAvisos(directorio, fechaReferencia(), true).catch((e) => console.error("[avisos]", e))
+setInterval(resumenDiario, 24 * 60 * 60 * 1000)
+resumenDiario()
 
 const port = Number(process.env.PORT ?? 3000)
 serve({ fetch: app.fetch, port }, () => console.log(`Agente de contratos en http://localhost:${port} · modelo ${llm.modelo}`))
