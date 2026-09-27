@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Agente de Contratos</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085; --border: #e2e5eb;
@@ -44,6 +45,19 @@
   .sugerencias { max-width: 920px; margin: 0 auto 8px; display: flex; gap: 6px; flex-wrap: wrap; }
   .sugerencias button { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; }
   .vacio { color: var(--muted); text-align: center; margin-top: 60px; }
+  #tablero { display: none; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  body.ver-tablero #tablero { display: block; }
+  body.ver-tablero main, body.ver-tablero form { display: none; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .kpi b { display: block; font-size: 26px; }
+  .kpi span { color: var(--muted); font-size: 13px; }
+  .graficas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .grafica { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .grafica h3, #tablero h2 { margin: 0 0 8px; font-size: 15px; }
+  .semaforo { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13.5px; }
+  .semaforo th, .semaforo td { border-bottom: 1px solid var(--border); padding: 7px 8px; text-align: left; }
+  .tabla-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
   @media (max-width: 600px) { .msg.usuario { margin-left: 0; } header { flex-direction: column; align-items: flex-start; } }
 </style>
 </head>
@@ -54,6 +68,7 @@
     <small id="estado">Conectando…</small>
   </div>
   <div class="acciones">
+    <button id="verTablero" class="primario" title="Análisis del maestro de contratos">📊 Tablero</button>
     <button id="verAlertas" title="Ver out/alertas.md">Ver alertas</button>
     <button id="verMaestro" title="Ver el maestro actual">Ver maestro</button>
     <button id="reiniciar" title="Borra out/ y empieza de cero">Reiniciar demo</button>
@@ -63,6 +78,19 @@
 <main id="chat">
   <div class="vacio" id="vacio">Escribe una instrucción o usa una sugerencia. Cada llamada a herramienta se verá aquí.</div>
 </main>
+
+<section id="tablero">
+  <h2>📊 Tablero del portafolio de contratos <small id="tableroFecha" style="color:var(--muted);font-weight:normal"></small></h2>
+  <div class="kpis" id="kpis"></div>
+  <div class="graficas">
+    <div class="grafica"><h3>Vencimientos por mes (próximos 12 meses)</h3><canvas id="gVenc" height="200"></canvas></div>
+    <div class="grafica"><h3>Contratos por comercial</h3><canvas id="gComercial" height="200"></canvas></div>
+    <div class="grafica"><h3>Contratos por país</h3><canvas id="gPais" height="200"></canvas></div>
+    <div class="grafica"><h3>Estado de pólizas</h3><canvas id="gPoliza" height="200"></canvas></div>
+  </div>
+  <h2>Semáforo de riesgo por contrato</h2>
+  <div class="tabla-scroll"><table class="semaforo" id="semaforo"></table></div>
+</section>
 
 <form id="form">
   <div class="sugerencias" id="sugerencias">
@@ -157,6 +185,65 @@
     sessionId = crypto.randomUUID(); sessionStorage.setItem("sessionId", sessionId)
     chat.innerHTML = '<div class="vacio" id="vacio">Demo reiniciada. El maestro volvió al estado del 2026-05-30.</div>'
     modoConfirmacion(false)
+  }
+
+  // ─── Tablero: analiza el maestro que alimenta el agente ───
+  const HOY_TABLERO = "2026-09-03"
+  const graficas = {}
+  function filasMaestro(csv) {
+    const filas = csv.trim().split("\n").map((l) => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).slice(0, -1).map((c) => c.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"')))
+    const cab = filas[0]
+    return filas.slice(1).map((f) => Object.fromEntries(cab.map((h, i) => [h, f[i] ?? ""])))
+  }
+  const dias = (iso) => Math.round((Date.parse(iso) - Date.parse(HOY_TABLERO)) / 86400000)
+  function grafica(id, tipo, etiquetas, datos, opciones = {}) {
+    graficas[id]?.destroy()
+    graficas[id] = new Chart($(id), { type: tipo, data: { labels: etiquetas, datasets: [{ data: datos, backgroundColor: tipo === "bar" ? "#2f5bea" : ["#2f5bea", "#1f8a5b", "#b7791f", "#c43d3d", "#7a5af8", "#0e9384"] }] },
+      options: { plugins: { legend: { display: tipo === "doughnut" } }, ...opciones } })
+  }
+  const contar = (arr, k) => arr.reduce((m, x) => (m[x[k] || "—"] = (m[x[k] || "—"] || 0) + 1, m), {})
+  async function pintarTablero() {
+    const res = await fetch("/api/out/sharepoint/maestro-contratos.csv")
+    const txt = res.ok ? await res.text() : null
+    $("tableroFecha").textContent = res.ok ? `· fecha de referencia ${HOY_TABLERO}` : "· aún no hay datos: procesa el buzón primero"
+    if (!txt) { $("kpis").innerHTML = ""; $("semaforo").innerHTML = ""; return }
+    const m = filasMaestro(txt)
+    const vigentes = m.filter((f) => f.fecha_fin && dias(f.fecha_fin) >= 0)
+    const porMoneda = vigentes.reduce((acc, f) => (acc[f.moneda] = (acc[f.moneda] || 0) + Number(f.valor || 0), acc), {})
+    const pend = m.filter((f) => f.requiere_poliza === "true" && f.estado_poliza !== "vigente")
+    const pronto = vigentes.filter((f) => dias(f.fecha_fin) <= 60)
+    const nuevos = m.filter((f) => f.fecha_registro > "2026-05-30")
+    $("kpis").innerHTML = [
+      [vigentes.length, `contratos vigentes de ${m.length}`],
+      [pronto.length, "vencen en ≤ 60 días"],
+      [pend.length, "pólizas exigidas no vigentes"],
+      [nuevos.length, "registrados desde el corte 2026-05-30"],
+      ...Object.entries(porMoneda).map(([mon, v]) => [v.toLocaleString("es-CO"), `valor vigente en ${mon}`]),
+    ].map(([n, t]) => `<div class="kpi"><b>${n}</b><span>${t}</span></div>`).join("")
+
+    const meses = [...Array(12)].map((_, i) => { const d = new Date(Date.UTC(2026, 8 + i, 1)); return d.toISOString().slice(0, 7) })
+    grafica("gVenc", "bar", meses, meses.map((mm) => m.filter((f) => f.fecha_fin.startsWith(mm)).length), { scales: { y: { ticks: { stepSize: 1 } } } })
+    const com = contar(m, "comercial"); grafica("gComercial", "bar", Object.keys(com), Object.values(com), { indexAxis: "y", scales: { x: { ticks: { stepSize: 1 } } } })
+    const pa = contar(m, "pais"); grafica("gPais", "doughnut", Object.keys(pa), Object.values(pa))
+    const po = contar(m, "estado_poliza"); grafica("gPoliza", "doughnut", Object.keys(po), Object.values(po))
+
+    const riesgo = (f) => {
+      const d = dias(f.fecha_fin)
+      if (d < 0) return ["🔴", `Vencido hace ${-d} días sin acta de terminación`]
+      if (f.requiere_poliza === "true" && f.estado_poliza !== "vigente") return ["🔴", `Póliza ${f.tipo_poliza} ${f.estado_poliza}`]
+      if (d <= 60) return ["🟡", `Vence en ${d} días`]
+      if (f.comercial.startsWith("NO REGISTRADO")) return ["🟡", "Comercial no registrado"]
+      return ["🟢", "Al día"]
+    }
+    const orden = { "🔴": 0, "🟡": 1, "🟢": 2 }
+    const filas = m.map((f) => [riesgo(f), f]).sort((a, b) => orden[a[0][0]] - orden[b[0][0]])
+    $("semaforo").innerHTML = `<tr><th></th><th>Contrato</th><th>Cliente</th><th>Fin</th><th>Valor</th><th>Comercial</th><th>Motivo</th></tr>` +
+      filas.map(([[s, motivo], f]) => `<tr><td>${s}</td><td>${escapar(f.id_contrato)}</td><td>${escapar(f.cliente)}</td><td>${f.fecha_fin}</td><td>${Number(f.valor).toLocaleString("es-CO")} ${f.moneda}</td><td>${escapar(f.comercial)}</td><td>${escapar(motivo)}</td></tr>`).join("")
+  }
+  $("verTablero").onclick = () => {
+    const activo = document.body.classList.toggle("ver-tablero")
+    $("verTablero").textContent = activo ? "💬 Volver al chat" : "📊 Tablero"
+    if (activo) pintarTablero()
   }
 
   let estadoBase = ""

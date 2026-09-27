@@ -81,7 +81,15 @@ El servidor no contiene reglas de negocio: solo expone la API y ejecuta el ciclo
 
 **Costo estimado por caso procesado** (medido con el contador de tokens de la sesión):
 
-COSTO_PLACEHOLDER
+| Medición | Valor |
+|---|---|
+| Tokens de una corrida completa (6 correos + alertas, medido en la sesión de prueba) | **28.407** (≈ 4.700 por correo), en ~5 pasos del modelo gracias a las llamadas en paralelo |
+| Supuesto de tarifa (verificar en la lista de precios vigente de Google) | ≈ US$0,50 por millón de tokens de entrada · ≈ US$3 por millón de salida (incluye razonamiento) |
+| Costo estimado por correo procesado | **≈ US$0,003–0,014** (la cota alta asume todo a tarifa de salida) |
+| Proyección 500 contratos/mes | **≈ US$2–7 al mes** |
+| En esta prueba | **US$0**: nivel gratuito de Gemini |
+
+La extracción no consume tokens (es código). El modelo solo orquesta, y por eso el costo es marginal frente a una persona dedicada. Controles: tope de 25 pasos por turno y de 400.000 tokens por sesión.
 
 ---
 

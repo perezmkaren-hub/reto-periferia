@@ -2,7 +2,7 @@
 
 Agente conversacional que actúa como **punto único de recepción de contratos**: lee el buzón, extrae los datos con nivel de confianza, detecta nuevos / actualizaciones / duplicados / rechazados, archiva en un SharePoint simulado, alimenta el maestro y genera alertas de vencimiento y pólizas. Nada dudoso se registra sin confirmación humana.
 
-- **Link de prueba:** _(se completa al desplegar en Render)_
+- **Link de prueba:** https://reto-periferia-contratos.onrender.com (plan gratuito de Render: si estuvo inactivo, la primera carga tarda ~50 s en despertar)
 - **Documento de solución:** [SOLUCION.md](SOLUCION.md)
 
 ## Levantar en local (un comando)
