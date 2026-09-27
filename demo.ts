@@ -3,8 +3,8 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { leer_buzon, extraer, validar, registrar, alertas } from "./src/tools/contratos.ts"
-import { monedaDesconocida, type Contrato } from "./src/lib/contratos-nucleo.ts"
+import { leer_buzon, extraer, validar, registrar, alertas, leer_pdf } from "./src/tools/contratos.ts"
+import { monedaDesconocida, extraerDeTexto, type Contrato } from "./src/lib/contratos-nucleo.ts"
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const ctx = { directory, sessionId: "demo" }
@@ -79,6 +79,22 @@ async function main() {
   const fechaMala = parse(await alertas.execute({ hoy: "2026-13-45" }, ctx))
   console.log(`🧪 Fecha inválida     → ${fechaMala.ok ? "ok" : `{ ok: false, error: "${fechaMala.error}" }`}`)
   console.log(`🧪 Moneda desconocida → detectada: ${monedaDesconocida("SEGUNDA. VALOR. El valor es de (EUR 50.000,00).")}\n`)
+
+  // P1 · contratos_leer_pdf: el mismo contrato de msg-001 en PDF nativo debe dar exactamente los mismos datos.
+  const pdf = parse<{ texto: string; caracteres: number }>(await leer_pdf.execute({ ruta: "ejemplos/contrato-CT-2026-015.pdf" }, ctx))
+  if (pdf.ok) {
+    const desdePdf = extraerDeTexto(pdf.data.texto)
+    const desdeTxt = extraerDeTexto(await fs.readFile(path.join(directory, "fixtures/reto-02/buzon/msg-001/contrato.txt"), "utf8"))
+    const campos = ["id_contrato", "cliente", "nit_cliente", "pais", "objeto", "valor", "moneda", "fecha_inicio", "fecha_fin", "requiere_poliza", "tipo_poliza"] as const
+    const distintos = campos.filter((k) => desdePdf[k] !== desdeTxt[k])
+    console.log(`📄 contratos_leer_pdf(ejemplos/contrato-CT-2026-015.pdf) → ${pdf.data.caracteres} caracteres`)
+    console.log(`   ${desdePdf.id_contrato} · ${desdePdf.cliente} · ${desdePdf.valor} ${desdePdf.moneda} · ${desdePdf.fecha_inicio} → ${desdePdf.fecha_fin} · póliza ${desdePdf.tipo_poliza}`)
+    console.log(`   PDF vs TXT: ${distintos.length === 0 ? "✅ los 11 campos coinciden" : `❌ difieren: ${distintos.join(", ")}`}`)
+  } else {
+    console.log(`📄 contratos_leer_pdf → ❌ ${pdf.error}`)
+  }
+  const fuera = parse(await leer_pdf.execute({ ruta: "../.env" }, ctx))
+  console.log(`🧪 PDF fuera del proyecto → ${fuera.ok ? "❌ permitido" : `{ ok: false, error: "${fuera.error}" }`}\n`)
 
   const al = parse<{ ruta: string; vencen: unknown[]; polizas_pendientes: unknown[]; registrados_desde_corte: unknown[] }>(
     await alertas.execute({ hoy: HOY }, ctx),

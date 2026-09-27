@@ -1,6 +1,6 @@
 // Genera modulo/ a partir de las MISMAS fuentes que usa la aplicación (una sola fuente de verdad):
 //   agent/prompt.md                     → modulo/agent.md                          (+ frontmatter)
-//   src/tools/contratos.ts              → modulo/tools/contratos.ts                (copia exacta: solo las 5 herramientas)
+//   src/tools/contratos.ts              → modulo/tools/contratos.ts                (copia exacta: solo las herramientas)
 //   src/lib/contratos-nucleo.ts         → modulo/lib/contratos-nucleo.ts           (copia exacta: núcleo sin servidor)
 //   src/knowledge/registro-contratos.md → modulo/skill/registro-contratos/SKILL.md (+ frontmatter)
 // Uso: npm run modulo            (genera)

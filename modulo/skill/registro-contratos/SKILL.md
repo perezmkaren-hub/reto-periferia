@@ -41,3 +41,6 @@ description: Conocimiento del proceso de registro de contratos vigentes de Perif
 
 ## Avisos proactivos
 Las alertas no dependen de que alguien pregunte: el sistema genera cada día el reporte y un correo para gerencia y uno por comercial con sus pendientes, y el chat muestra el aviso al abrirse.
+
+## Documentos en PDF
+Se procesan PDF nativos (con texto). El texto se reconstruye por párrafos y cláusulas, y se aplican las mismas reglas que a un `.txt`. Un PDF escaneado (imagen) no trae texto: se reporta como "requiere OCR" y no se inventa nada.

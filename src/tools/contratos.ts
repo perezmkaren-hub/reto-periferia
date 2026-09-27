@@ -4,7 +4,7 @@
 import { z } from "zod"
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { COLUMNAS, type Comercial, type Contrato, ContratoSchema, CorreccionesSchema, FECHA_CORTE, type Fila, LEYENDA_SEMAFORO, MONEDAS, anexar, camposAlterados, clasificar, contratoDelMensaje, esFechaValida, escribirMaestro, existe, extraerDeTexto, fecha, fechaHoy, herramienta, leerAdjuntoContrato, leerCorreo, leerMaestro, leerProcesados, marcarProcesado, monedaDesconocida, rutas, slug, tieneContrato } from "../lib/contratos-nucleo.ts"
+import { COLUMNAS, resolverRutaPdf, textoDePdf, type Comercial, type Contrato, ContratoSchema, CorreccionesSchema, FECHA_CORTE, type Fila, LEYENDA_SEMAFORO, MONEDAS, anexar, camposAlterados, clasificar, contratoDelMensaje, esFechaValida, escribirMaestro, existe, extraerDeTexto, fecha, fechaHoy, herramienta, leerAdjuntoContrato, leerCorreo, leerMaestro, leerProcesados, marcarProcesado, monedaDesconocida, rutas, slug, tieneContrato } from "../lib/contratos-nucleo.ts"
 
 // ─── Herramientas ─────────────────────────────────────────────────────────────
 
@@ -221,5 +221,15 @@ export const alertas = herramienta(
       data: { ruta: "out/alertas.md", vencen, vencidos, polizas_pendientes, registrados_desde_corte },
       resumen: `${vencen.length} vencen · ${polizas_pendientes.length} pólizas pendientes · ${registrados_desde_corte.length} desde corte`,
     }
+  },
+)
+
+export const leer_pdf = herramienta(
+  "leer_pdf",
+  "Extrae el texto de un contrato en PDF nativo (no escaneado) ubicado dentro del proyecto, reconstruyendo sus párrafos y cláusulas.",
+  { ruta: z.string().min(1).describe("Ruta relativa del PDF dentro de fixtures/, ejemplos/ u out/, por ejemplo ejemplos/contrato-CT-2026-015.pdf") },
+  async ({ ruta }, ctx) => {
+    const texto = await textoDePdf(resolverRutaPdf(ctx.directory, ruta))
+    return { data: { ruta, caracteres: texto.length, texto }, resumen: `${texto.length} caracteres extraídos de ${path.basename(ruta)}` }
   },
 )

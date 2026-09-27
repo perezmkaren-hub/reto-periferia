@@ -106,6 +106,7 @@
     <button type="button" data-texto="Procesa el buzón de contratos con fecha de hoy 2026-09-03. Registra lo que esté limpio, muéstrame lo que requiere revisión campo por campo y termina con el reporte de alertas. No registres nada dudoso sin preguntarme.">▶ Procesar buzón (demo)</button>
     <button type="button" data-texto="Confirmo el valor 0 y la fecha fin 2027-08-31 para msg-006. Regístralo.">✔ Confirmar msg-006</button>
     <button type="button" data-texto="¿Qué contratos vencen en los próximos 60 días con fecha 2026-09-03?">¿Qué vence pronto?</button>
+    <button type="button" data-texto="Lee el PDF ejemplos/contrato-CT-2026-015.pdf y dime cliente, número, valor, vigencia y si exige póliza.">📄 Leer PDF de ejemplo</button>
   </div>
   <div class="fila">
     <textarea id="entrada" placeholder="Escribe tu mensaje… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
@@ -151,6 +152,11 @@
     pensando.className = "pensando"
     pensando.textContent = "El agente está pensando y usando herramientas"
     agregar(pensando)
+    const inicio = Date.now()
+    const reloj = setInterval(() => {
+      const seg = Math.round((Date.now() - inicio) / 1000)
+      pensando.textContent = `El agente está trabajando (${seg} s). Procesar el buzón completo puede tardar 1–3 minutos según la demanda del modelo`
+    }, 1000)
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, message: texto }) })
       const r = await res.json()
@@ -165,6 +171,7 @@
       pensando.remove()
       burbuja("error", "⚠️ No se pudo contactar al servidor. Intenta de nuevo.")
     } finally {
+      clearInterval(reloj)
       boton.disabled = false
       entrada.focus()
     }

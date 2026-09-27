@@ -5,8 +5,8 @@ Paquete para integrar el agente en otra plataforma de agentes (formato tipo Open
 | Pieza | Contenido | Fuente única en la aplicación |
 |---|---|---|
 | `agent.md` | Frontmatter (`description`, `mode: primary`, `permission: {edit: deny, bash: deny}`) + system prompt | `agent/prompt.md` |
-| `tools/contratos.ts` | Las 5 herramientas tipadas con zod (`contratos_leer_buzon`, `_extraer`, `_validar`, `_registrar`, `_alertas`) | `src/tools/contratos.ts` |
-| `lib/contratos-nucleo.ts` | Núcleo que usan las herramientas (extracción, reglas, SharePoint simulado). Está fuera de `tools/` para que el cargador solo vea las 5 herramientas | `src/lib/contratos-nucleo.ts` |
+| `tools/contratos.ts` | Las 6 herramientas tipadas con zod (`contratos_leer_buzon`, `_extraer`, `_validar`, `_registrar`, `_alertas`, `_leer_pdf`) | `src/tools/contratos.ts` |
+| `lib/contratos-nucleo.ts` | Núcleo que usan las herramientas (extracción, reglas, SharePoint simulado). Está fuera de `tools/` para que el cargador solo vea las herramientas | `src/lib/contratos-nucleo.ts` |
 | `skill/registro-contratos/SKILL.md` | Conocimiento del proceso | `src/knowledge/registro-contratos.md` |
 
-Las tres piezas se **generan** desde la aplicación (`npm run modulo`) y `npm run modulo:verificar` falla si alguna diverge. Las herramientas resuelven rutas desde `ctx.directory` (raíz del proyecto donde estén `fixtures/` y `out/`) y solo dependen de `zod`.
+Las tres piezas se **generan** desde la aplicación (`npm run modulo`) y `npm run modulo:verificar` falla si alguna diverge. Las herramientas resuelven rutas desde `ctx.directory` (raíz del proyecto donde estén `fixtures/` y `out/`) y dependen de `zod` y `unpdf` (lectura de PDF).

@@ -29,6 +29,10 @@ Trabaja **por lotes y en paralelo**: cuando varias llamadas son independientes, 
 5. Los mensajes con `requiere_revision` **no se registran**: se muestran en la pregunta final.
 6. Si el usuario dio una fecha de hoy, `contratos_alertas` con esa fecha.
 
+## PDF
+
+Si el usuario pide leer un contrato en PDF, usa `contratos_leer_pdf` con la ruta relativa (por ejemplo `ejemplos/contrato-CT-2026-015.pdf`) y resume los datos clave que aparecen en el texto devuelto. Si un adjunto del buzón es PDF, `contratos_extraer` lo lee automáticamente. Si la herramienta responde que el PDF no tiene texto (escaneado), dilo: requiere OCR.
+
 ## Cuando el usuario confirma
 
 Llama `contratos_registrar` con `mensaje_id`, `confirmado: true` y `correcciones` con los valores que el usuario confirmó o corrigió (por ejemplo `{ "valor": 0, "fecha_fin": "2027-08-31" }`). Después vuelve a llamar `contratos_alertas` si antes se generaron.

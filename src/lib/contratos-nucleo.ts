@@ -4,6 +4,7 @@
 import { z } from "zod"
 import { promises as fs } from "node:fs"
 import path from "node:path"
+import { extractText, getDocumentProxy } from "unpdf"
 
 // ─── Tipos compartidos ────────────────────────────────────────────────────────
 
@@ -477,8 +478,54 @@ export async function clasificar(dir: string, correo: Correo, c: Contrato): Prom
 export async function leerAdjuntoContrato(dir: string, correo: Correo): Promise<{ nombre: string; texto: string } | null> {
   const nombre = correo.adjuntos.find((a) => /^(contrato|otros[ií])/i.test(a))
   if (!nombre) return null
-  const texto = await fs.readFile(path.join(rutas(dir).buzon, correo.id, nombre), "utf8")
+  const ruta = path.join(rutas(dir).buzon, correo.id, nombre)
+  // P1: si el adjunto es PDF nativo, se extrae su texto; si es .txt se lee directo.
+  const texto = /\.pdf$/i.test(nombre) ? await textoDePdf(ruta) : await fs.readFile(ruta, "utf8")
   return { nombre, texto }
+}
+
+// ─── PDF nativo (P1) ──────────────────────────────────────────────────────────
+
+const INICIO_PARRAFO = /^(PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA|S[ÉE]PTIMA|OCTAVA|NOVENA|D[ÉE]CIMA|UND[ÉE]CIMA)[\s.]|^(Entre\b|Para constancia|Se firma|EL CONTRATANTE|CONTRATO\b|CONTRATO MARCO|OTROS[IÍ]\b|COTIZACI[ÓO]N\b)/
+
+// El PDF corta las líneas por el ancho de página; se reconstruyen los párrafos para que las reglas funcionen igual que con .txt.
+export function normalizarTextoPdf(texto: string): string {
+  const parrafos: string[] = []
+  for (const linea of texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    if (parrafos.length === 0 || INICIO_PARRAFO.test(linea)) parrafos.push(linea)
+    else parrafos[parrafos.length - 1] += " " + linea
+  }
+  return parrafos.join("\n\n")
+}
+
+const MAX_BYTES_PDF = 10 * 1024 * 1024
+
+// Solo lee PDFs dentro del proyecto (fixtures/, ejemplos/, out/); nunca rutas absolutas ni fuera de la raíz.
+export function resolverRutaPdf(dir: string, ruta: string): string {
+  const destino = path.resolve(dir, ruta)
+  const permitidas = ["fixtures", "ejemplos", "out"].map((d) => path.join(dir, d) + path.sep)
+  if (path.isAbsolute(ruta) || !permitidas.some((p) => destino.startsWith(p))) {
+    throw new Error(`Ruta no permitida: ${ruta}. Solo se leen PDFs dentro de fixtures/, ejemplos/ u out/`)
+  }
+  if (!/\.pdf$/i.test(destino)) throw new Error(`El archivo no es un PDF: ${ruta}`)
+  return destino
+}
+
+export async function textoDePdf(rutaAbsoluta: string): Promise<string> {
+  const stat = await fs.stat(rutaAbsoluta).catch(() => null)
+  if (!stat) throw new Error(`No existe el archivo ${path.basename(rutaAbsoluta)}`)
+  if (stat.size > MAX_BYTES_PDF) throw new Error(`El PDF supera 10 MB`)
+  let crudo: string
+  try {
+    const pdf = await getDocumentProxy(new Uint8Array(await fs.readFile(rutaAbsoluta)))
+    crudo = (await extractText(pdf, { mergePages: true })).text
+  } catch {
+    throw new Error(`No se pudo leer el PDF ${path.basename(rutaAbsoluta)}: está dañado o protegido`)
+  }
+  const texto = normalizarTextoPdf(crudo)
+  // Un PDF escaneado es una imagen: no trae texto. Se reporta en vez de inventar.
+  if (texto.replace(/\s/g, "").length < 50) throw new Error(`El PDF ${path.basename(rutaAbsoluta)} no tiene texto extraíble (posiblemente escaneado): requiere OCR`)
+  return texto
 }
 
 export const CONTRATO_VACIO: Contrato = {

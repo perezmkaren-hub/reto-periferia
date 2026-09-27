@@ -25,6 +25,8 @@ npm install && npm run demo
 
 Procesa los 6 mensajes llamando directamente a las herramientas (sin clave, sin modelo). Limpia `out/` al inicio, así que es determinista. Muestra la primera pasada (msg-006 queda sin registrar por revisión) y una segunda llamada con `confirmado: true`.
 
+Incluye además: la prueba de que el modelo no puede colar valores inventados, los errores tipados (mensaje inexistente, fecha inválida, moneda desconocida) y la lectura del PDF de ejemplo (`ejemplos/contrato-CT-2026-015.pdf`), que debe dar los mismos 11 campos que el `.txt` de msg-001. El PDF se regenera con `npm run pdf:ejemplo`.
+
 ## Variables de entorno
 
 | Variable | Obligatoria | Uso |
@@ -65,7 +67,7 @@ Ver [modulo/README.md](modulo/README.md).
 ```
 agent/prompt.md                   comportamiento (system prompt)
 src/knowledge/registro-contratos.md  conocimiento del proceso
-src/tools/contratos.ts            ejecución: las 5 herramientas (cada export = una herramienta)
+src/tools/contratos.ts            ejecución: las 6 herramientas (cada export = una herramienta)
 src/lib/contratos-nucleo.ts       núcleo: extracción, reglas RN1–RN5, SharePoint simulado
 src/agente.ts                     ciclo del agente (independiente del proveedor)
 src/llm/adapter.ts, gemini.ts     adaptador del modelo
@@ -74,6 +76,7 @@ src/server.ts                     API HTTP
 web/index.html                    chat + banda de avisos + tablero
 modulo/                           bonus: agente empaquetado (generado)
 demo.ts                           verificación sin modelo
+ejemplos/                         PDF nativo de ejemplo para contratos_leer_pdf
 fixtures/                         insumos (solo lectura)
 out/                              generado en ejecución (no se versiona)
 ```

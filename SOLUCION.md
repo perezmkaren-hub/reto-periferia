@@ -18,7 +18,8 @@ El PRD pide un agente que registre contratos y genere alertas **cuando se le pid
 | 5 | **🛡️ Confirmación humana forzada en código** | El PRD lo pide en el prompt; lo reforcé en el servidor: el modelo **no puede** auto-confirmarse aunque lo intente. | Guardia en `src/agente.ts`. |
 | 6 | **Resiliencia ante el proveedor** | Durante la construcción Gemini tuvo saturación real (error 503). Añadí reintentos, modelo de respaldo y un mensaje claro que conserva lo avanzado. | README · `src/llm/gemini.ts`. |
 | 7 | **Marco de gobierno de datos e IA** ([GOBIERNO.md](GOBIERNO.md)) | Lleva la regla operativa a nivel estratégico: dueño del dato, calidad medible, IA supervisada y hoja de ruta para escalar el patrón a otros flujos documentales. | Documento para la vicepresidencia. |
-| 8 | **Bonus §9.4: módulo reutilizable** con verificación de no divergencia | El agente se puede instalar en otra plataforma de agentes sin nuestro servidor, y nunca queda desactualizado respecto a la app. | `npm run modulo:verificar`. |
+| 8 | **Lectura de PDF nativo (P1 opcional)** | Los contratos reales llegan en PDF, no en .txt. El agente ya los procesa con las mismas reglas y lo prueba contra el caso de texto. | Botón **📄 Leer PDF de ejemplo** en el chat · sección 📄 de `npm run demo`. |
+| 9 | **Bonus §9.4: módulo reutilizable** con verificación de no divergencia | El agente se puede instalar en otra plataforma de agentes sin nuestro servidor, y nunca queda desactualizado respecto a la app. | `npm run modulo:verificar`. |
 
 ---
 
@@ -148,6 +149,8 @@ La extracción no consume tokens (es código). El modelo solo orquesta, y por es
 | … plazo en meses | Fecha de firma + N meses. Si solo se conoce el **mes** de firma: inicio = día 1, fin = **cierre del mes** (estimación más tardía) | 0.8 inicio · **0.5 fin** |
 | `requiere_poliza` / `tipo_poliza` | Cláusula GARANTÍAS; tipos normalizados (cumplimiento, calidad, responsabilidad_civil, salarios_prestaciones). Póliza "para cada orden de servicio" → no aplica al marco | 0.9 |
 
+**PDF nativo (P1):** si el adjunto es `.pdf`, se extrae el texto y se reconstruyen los párrafos. El PDF corta las líneas por el ancho de página, así que se une cada línea con el párrafo anterior salvo cuando empieza una cláusula ("PRIMERA.", "SEGUNDA.", …) o un bloque ("Entre", "Se firma"). Luego se aplican exactamente las mismas reglas.
+
 Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8** entra a `requiere_revision`. En un otrosí solo se evalúan los campos que el documento trae; el resto se conserva del maestro.
 
 **Clasificación (RN1–RN4):** búsqueda por `id_contrato`; si no, por `nit_cliente` + similitud de objeto ≥ 0.9 (coeficiente de Dice sobre bigramas). Mismo id y mismos valor/fechas → **duplicado**; otrosí o campos distintos → **actualización** (con `diferencias` antes/después); sin coincidencia → **nuevo**; sin adjunto de contrato o sin partes/objeto → **rechazado**.
@@ -267,10 +270,10 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 | HU-6 Errores | ✅ Hecho | `{ ok:false, error }`; demo prueba mensaje inexistente, fecha inválida y moneda desconocida; el lote no se aborta |
 | Front con tool calls y confirmación | ✅ Hecho | `web/index.html` |
 | Link público | ✅ Render | Ver README |
-| Bonus módulo reutilizable | ✅ Hecho | `modulo/` con `agent.md`, `tools/contratos.ts` (solo las 5 herramientas: cada export es una herramienta), `lib/contratos-nucleo.ts` y `skill/registro-contratos/SKILL.md`, **generados** desde las mismas fuentes de la app (`npm run modulo`); `npm run modulo:verificar` falla si divergen |
+| Bonus módulo reutilizable | ✅ Hecho | `modulo/` con `agent.md`, `tools/contratos.ts` (solo las 6 herramientas: cada export es una herramienta), `lib/contratos-nucleo.ts` y `skill/registro-contratos/SKILL.md`, **generados** desde las mismas fuentes de la app (`npm run modulo`); `npm run modulo:verificar` falla si divergen |
 | Avisos proactivos | ✅ Extra | Banda de avisos en el chat + resumen diario con correos simulados a gerencia y comerciales |
 | Tablero de análisis | ✅ Extra | KPIs, 4 gráficas y semáforo por contrato |
-| `contratos_leer_pdf` (P1) | ⏳ No hecho | Opcional |
+| `contratos_leer_pdf` (P1 opcional) | ✅ Hecho | Lee PDF nativo con `unpdf`, reconstruye párrafos y cláusulas, y solo acepta rutas dentro de `fixtures/`, `ejemplos/` u `out/` (máx. 10 MB). Un PDF escaneado responde "requiere OCR" en vez de inventar. `contratos_extraer` usa el PDF automáticamente si el adjunto es `.pdf`. La demo prueba que `ejemplos/contrato-CT-2026-015.pdf` da **los mismos 11 campos** que el `.txt` de msg-001 |
 
 ---
 
@@ -289,7 +292,7 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 |---|---|---|---|
 | D1 | `validar`/`registrar` aceptaban valores enviados por el modelo: se podía registrar msg-006 con valor inventado sin confirmación | Alta (RN5, CA2, CA3) | Las herramientas **siempre** releen el documento; un contrato distinto se bloquea. La demo incluye la prueba del ataque |
 | D2 | `fecha_registro` usaba el reloj real, no la fecha de referencia | Media (determinismo) | Usa `FECHA_REFERENCIA` (la demo fija 2026-09-03) |
-| D3 | El módulo exportaba utilidades que un cargador tomaría como herramientas | Media (bonus) | Núcleo separado en `lib/`; `tools/contratos.ts` exporta solo las 5 herramientas |
+| D3 | El módulo exportaba utilidades que un cargador tomaría como herramientas | Media (bonus) | Núcleo separado en `lib/`; `tools/contratos.ts` exporta solo herramientas |
 | D4 | El tope de tokens se evadía con otra sesión; el reset era público | Baja | Tope global diario, límite por IP y `ADMIN_KEY` |
 | D5 | Un error al escribir el log podía romper el turno | Baja | Escritura protegida |
 | D6 | Un otrosí de un contrato inexistente fallaba en vez de rechazarse | Baja | Se clasifica `rechazado` con motivo |
