@@ -1,6 +1,7 @@
 // Genera modulo/ a partir de las MISMAS fuentes que usa la aplicación (una sola fuente de verdad):
 //   agent/prompt.md                     → modulo/agent.md                          (+ frontmatter)
-//   src/tools/contratos.ts              → modulo/tools/contratos.ts                (copia exacta)
+//   src/tools/contratos.ts              → modulo/tools/contratos.ts                (copia exacta: solo las 5 herramientas)
+//   src/lib/contratos-nucleo.ts         → modulo/lib/contratos-nucleo.ts           (copia exacta: núcleo sin servidor)
 //   src/knowledge/registro-contratos.md → modulo/skill/registro-contratos/SKILL.md (+ frontmatter)
 // Uso: npm run modulo            (genera)
 //      npm run modulo:verificar  (falla si modulo/ difiere de las fuentes)
@@ -14,6 +15,7 @@ const leer = (p: string) => fs.readFile(path.join(raiz, p), "utf8")
 async function piezas(): Promise<Record<string, string>> {
   const prompt = await leer("agent/prompt.md")
   const herramientas = await leer("src/tools/contratos.ts")
+  const nucleo = await leer("src/lib/contratos-nucleo.ts")
   const conocimiento = await leer("src/knowledge/registro-contratos.md")
   return {
     "modulo/agent.md": [
@@ -28,6 +30,7 @@ async function piezas(): Promise<Record<string, string>> {
       prompt,
     ].join("\n"),
     "modulo/tools/contratos.ts": herramientas,
+    "modulo/lib/contratos-nucleo.ts": nucleo,
     "modulo/skill/registro-contratos/SKILL.md": [
       "---",
       "name: registro-contratos",

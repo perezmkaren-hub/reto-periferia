@@ -19,9 +19,25 @@ const config = {
   maxTokensSesion: Number(process.env.MAX_TOKENS_SESION ?? 400_000),
 }
 const MAX_SESIONES = 100
+// D4 · Costo del link público: tope global diario de tokens, límite de mensajes por IP y reset protegido.
+const MAX_TOKENS_DIA = Number(process.env.MAX_TOKENS_DIA ?? 3_000_000)
+const MAX_MENSAJES_IP_10MIN = Number(process.env.MAX_MENSAJES_IP_10MIN ?? 30)
+const consumo = { dia: "", tokens: 0 }
+const mensajesPorIp = new Map<string, number[]>()
+
+function dentroDeLimites(ip: string): string | null {
+  const hoy = new Date().toISOString().slice(0, 10)
+  if (consumo.dia !== hoy) { consumo.dia = hoy; consumo.tokens = 0 }
+  if (consumo.tokens >= MAX_TOKENS_DIA) return "Se alcanzó el tope diario de uso del modelo en este link. Intenta mañana o córrelo en local."
+  const ahora = Date.now()
+  const recientes = (mensajesPorIp.get(ip) ?? []).filter((t) => ahora - t < 10 * 60_000)
+  if (recientes.length >= MAX_MENSAJES_IP_10MIN) return "Demasiados mensajes seguidos desde tu conexión. Espera unos minutos."
+  mensajesPorIp.set(ip, [...recientes, ahora])
+  return null
+}
 
 const apiKey = process.env.GEMINI_API_KEY ?? ""
-const llm = new GeminiLLM(apiKey, process.env.GEMINI_MODEL ?? "gemini-3.8-flash", Number(process.env.LLM_TIMEOUT_MS ?? 60_000), process.env.GEMINI_MODEL_RESPALDO ?? "gemini-3-flash-preview")
+const llm = new GeminiLLM(apiKey, process.env.GEMINI_MODEL ?? "gemini-3.8-flash", Number(process.env.LLM_TIMEOUT_MS ?? 60_000), process.env.GEMINI_MODEL_RESPALDO ?? "gemini-3.1-flash-lite")
 const sesiones = new Map<string, Sesion>()
 
 const app = new Hono()
@@ -35,6 +51,10 @@ app.post("/api/chat", async (c) => {
   if (!parsed.success) return c.json({ ok: false, error: "Cuerpo inválido: se espera { sessionId, message }" }, 400)
   if (!apiKey) return c.json({ ok: false, error: "El servidor no tiene configurada la clave del modelo (GEMINI_API_KEY)" }, 500)
 
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "local"
+  const limite = dentroDeLimites(ip)
+  if (limite) return c.json({ ok: false, error: limite }, 429)
+
   const id = parsed.data.sessionId ?? randomUUID()
   let sesion = sesiones.get(id)
   if (!sesion) {
@@ -45,7 +65,9 @@ app.post("/api/chat", async (c) => {
 
   try {
     const sistema = await cargarSistema(directorio)
+    const antes = sesion.tokensUsados
     const r = await ejecutarTurno(sesion, parsed.data.message, llm, sistema, config)
+    consumo.tokens += sesion.tokensUsados - antes
     return c.json({ ok: true, sessionId: id, ...r, tokensUsados: sesion.tokensUsados })
   } catch (e) {
     // CA5: el error se muestra en lenguaje claro y la sesión sigue viva.
@@ -69,6 +91,8 @@ app.get("/api/sessions/:id", (c) => {
 
 // Reinicia el SharePoint simulado para repetir la demo desde cero.
 app.post("/api/reset", async (c) => {
+  const clave = process.env.ADMIN_KEY
+  if (clave && c.req.header("x-admin-key") !== clave) return c.json({ ok: false, error: "Se requiere la clave de administración para reiniciar" }, 401)
   await fs.rm(path.join(directorio, "out"), { recursive: true, force: true })
   sesiones.clear()
   return c.json({ ok: true })

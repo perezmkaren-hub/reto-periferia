@@ -191,7 +191,13 @@
   $("verMaestro").onclick = () => verArchivo("sharepoint/maestro-contratos.csv", "📊 Maestro de contratos (out/sharepoint)")
   $("reiniciar").onclick = async () => {
     if (!confirm("¿Borrar out/ y empezar la demo desde cero?")) return
-    await fetch("/api/reset", { method: "POST" })
+    let res = await fetch("/api/reset", { method: "POST" })
+    if (res.status === 401) {
+      const clave = prompt("Clave de administración para reiniciar la demo:")
+      if (!clave) return
+      res = await fetch("/api/reset", { method: "POST", headers: { "x-admin-key": clave } })
+      if (!res.ok) { alert("Clave incorrecta"); return }
+    }
     sessionId = crypto.randomUUID(); sessionStorage.setItem("sessionId", sessionId)
     chat.innerHTML = '<div class="vacio" id="vacio">Demo reiniciada. El maestro volvió al estado del 2026-05-30.</div>'
     modoConfirmacion(false)

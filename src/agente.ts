@@ -4,7 +4,10 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import type { DefinicionHerramienta, Mensaje, ProveedorLLM } from "./llm/adapter.ts"
-import { herramientas, type NombreHerramienta } from "./tools/contratos.ts"
+import * as contratos from "./tools/contratos.ts"
+
+// Nombre visible para el modelo: <archivo>_<export> (PRD §6.2).
+const herramientas = Object.fromEntries(Object.entries(contratos).map(([k, h]) => [`contratos_${k}`, h])) as Record<string, (typeof contratos)[keyof typeof contratos]>
 
 export type LlamadaVisible = { nombre: string; argumentos: Record<string, unknown>; ok: boolean; resumen: string; resultado: unknown }
 
@@ -101,7 +104,7 @@ export async function ejecutarTurno(
 
     const resultados: { id: string; nombre: string; resultado: string }[] = []
     for (const llamada of r.llamadas) {
-      const h = herramientas[llamada.nombre as NombreHerramienta]
+      const h = herramientas[llamada.nombre]
       const mensajeId = typeof llamada.argumentos.mensaje_id === "string" ? llamada.argumentos.mensaje_id : ""
       let resultado: string
 
@@ -111,7 +114,17 @@ export async function ejecutarTurno(
         // Guardia en código: el modelo no puede auto-confirmarse en el mismo turno en que detecta la duda.
         resultado = JSON.stringify({ ok: false, error: `confirmado=true no es válido para ${mensajeId}: primero debes preguntarle al usuario y esperar su respuesta en el siguiente mensaje` })
       } else {
-        resultado = await h.execute(llamada.argumentos as never, ctx)
+        // Los argumentos llegan sin tipo desde el modelo; cada herramienta los valida con zod antes de ejecutar.
+        resultado = await (h.execute as (a: Record<string, unknown>, c: typeof ctx) => Promise<string>)(llamada.argumentos, ctx)
+      }
+      // CA4: las llamadas que el ciclo rechaza antes de ejecutar también quedan en el log.
+      if (!h || resultado.includes("confirmado=true no es válido")) {
+        const error = (JSON.parse(resultado) as { error: string }).error
+        await fs.mkdir(path.join(config.directorio, "out"), { recursive: true })
+          .then(() => fs.appendFile(path.join(config.directorio, "out/log.jsonl"), JSON.stringify({
+            ts: ahora(), sesion: sesion.id, herramienta: llamada.nombre, mensaje_id: mensajeId || null, ok: false, resumen: `bloqueada por el ciclo: ${error}`,
+          }) + "\n"))
+          .catch(() => undefined)
       }
 
       const { ok, resumen, datos } = resumir(resultado)

@@ -4,6 +4,7 @@ Agente conversacional que actúa como **punto único de recepción de contratos*
 
 - **Link de prueba:** https://reto-periferia-contratos.onrender.com (plan gratuito de Render: si estuvo inactivo, la primera carga tarda ~50 s en despertar)
 - **Documento de solución:** [SOLUCION.md](SOLUCION.md)
+- **Marco de gobierno de datos e IA:** [GOBIERNO.md](GOBIERNO.md)
 
 ## Levantar en local (un comando)
 
@@ -34,6 +35,9 @@ Procesa los 6 mensajes llamando directamente a las herramientas (sin clave, sin 
 | `MAX_ITERACIONES` | No | Tope de pasos herramienta→modelo por turno (25). |
 | `MAX_TOKENS_SESION` | No | Tope de tokens por sesión (400.000). |
 | `LLM_TIMEOUT_MS` | No | Timeout por llamada al modelo (60.000 ms). |
+| `MAX_TOKENS_DIA` | No | Tope global diario de tokens del link público (3.000.000). |
+| `MAX_MENSAJES_IP_10MIN` | No | Mensajes permitidos por IP cada 10 minutos (30). |
+| `ADMIN_KEY` | No | Si se define, "Reiniciar demo" la pide. |
 | `FECHA_REFERENCIA` | No | Fecha simulada para avisos y tablero (`2026-09-03` en la demo). Vacía = fecha real. |
 
 ## API
@@ -61,7 +65,8 @@ Ver [modulo/README.md](modulo/README.md).
 ```
 agent/prompt.md                   comportamiento (system prompt)
 src/knowledge/registro-contratos.md  conocimiento del proceso
-src/tools/contratos.ts            ejecución: herramientas tipadas con zod
+src/tools/contratos.ts            ejecución: las 5 herramientas (cada export = una herramienta)
+src/lib/contratos-nucleo.ts       núcleo: extracción, reglas RN1–RN5, SharePoint simulado
 src/agente.ts                     ciclo del agente (independiente del proveedor)
 src/llm/adapter.ts, gemini.ts     adaptador del modelo
 src/avisos.ts                     avisos proactivos y resumen diario

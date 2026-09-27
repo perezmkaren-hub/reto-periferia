@@ -3,11 +3,14 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { leer_buzon, extraer, validar, registrar, alertas, monedaDesconocida, type Contrato } from "./src/tools/contratos.ts"
+import { leer_buzon, extraer, validar, registrar, alertas } from "./src/tools/contratos.ts"
+import { monedaDesconocida, type Contrato } from "./src/lib/contratos-nucleo.ts"
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const ctx = { directory, sessionId: "demo" }
 const HOY = "2026-09-03"
+// Determinismo: la fecha de registro usa la misma fecha simulada que las alertas.
+process.env.FECHA_REFERENCIA = HOY
 
 type Ok<T> = { ok: true; data: T }
 type Err = { ok: false; error: string }
@@ -30,7 +33,7 @@ async function main() {
     if (!ext.ok) console.log(`   extracción: ${ext.error}`)
 
     const val = parse<{ clasificacion: string; requiere_revision: string[]; advertencias: string[]; diferencias?: object }>(
-      await validar.execute({ mensaje_id: m.id, contrato }, ctx),
+      await validar.execute({ mensaje_id: m.id }, ctx),
     )
     if (!val.ok) { console.log(`   ❌ ${val.error}\n`); continue }
     console.log(`   clasificación:  ${val.data.clasificacion}`)
@@ -39,7 +42,7 @@ async function main() {
     for (const a of val.data.advertencias) console.log(`   ⚠️  ${a}`)
 
     const reg = parse<{ accion: string; id_contrato: string; ruta_archivo: string | null }>(
-      await registrar.execute({ mensaje_id: m.id, contrato }, ctx),
+      await registrar.execute({ mensaje_id: m.id }, ctx),
     )
     if (reg.ok) {
       console.log(`   acción:         ${reg.data.accion}${reg.data.ruta_archivo ? ` → ${reg.data.ruta_archivo}` : ""}\n`)
@@ -47,6 +50,14 @@ async function main() {
       console.log(`   acción:         ⏸  NO registrado — ${reg.error}\n`)
       if (contrato) pendientes.push({ id: m.id, contrato, revisar: val.data.requiere_revision })
     }
+  }
+
+  // Seguridad (CA2/RN5): el modelo no puede colar valores propios saltándose la revisión.
+  const ext6 = parse<{ contrato: Contrato }>(await extraer.execute({ mensaje_id: "msg-006" }, ctx))
+  if (ext6.ok) {
+    const trampa = { ...ext6.data.contrato, valor: 999999, confianza: Object.fromEntries(Object.keys(ext6.data.contrato.confianza).map((k) => [k, 1])) }
+    const intento = parse(await registrar.execute({ mensaje_id: "msg-006", contrato: trampa }, ctx))
+    console.log(`🛡️  Intento de registrar msg-006 con valor inventado 999999 y confianza 1 → ${intento.ok ? "❌ ACEPTADO" : `bloqueado: ${intento.error.slice(0, 110)}…`}\n`)
   }
 
   // Segunda pasada: el humano confirma uno de los pendientes.

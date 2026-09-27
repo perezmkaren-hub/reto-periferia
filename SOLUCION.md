@@ -5,6 +5,23 @@
 
 ---
 
+## 0. Valor agregado: lo que va más allá del PRD
+
+El PRD pide un agente que registre contratos y genere alertas **cuando se le pide**. Como gerente de proyectos, mi lectura del problema fue otra: el proceso murió porque **dependía de que alguien se acordara de mirar**. Por eso agregué capacidades que hacen que la información **llegue sola** a quien debe actuar.
+
+| # | Plus | Qué problema del negocio resuelve | Cómo verlo en la demo |
+|---|---|---|---|
+| 1 | **🔔 Aviso proactivo en el chat** | La analista no tiene que preguntar: al abrir la aplicación ve de inmediato qué está en riesgo. Se actualiza tras cada acción del agente. | Abrir el link: la banda roja/ámbar arriba del chat. Clic → tablero. |
+| 2 | **⏰ Resumen diario automático** | Gerencia y comerciales reciben su parte sin entrar a ningún sistema. Cada comercial recibe **solo sus** pendientes (prórroga, acta de terminación, póliza). | `out/bandeja-salida/<fecha>/gerencia.md` y un archivo por comercial. En producción: envío real por Microsoft Graph (correo/Teams). |
+| 3 | **📊 Tablero del portafolio** | Responde la pregunta del PRD "¿qué vence este trimestre?" de un vistazo: KPIs, vencimientos por mes, contratos por comercial y país, estado de pólizas. Sin costo de modelo. | Botón **📊 Tablero**. |
+| 4 | **🚦 Semáforo y convenciones de color** en chat, maestro, tablero, alertas y correos | Prioriza la acción: lo rojo primero. Un mismo lenguaje visual para todos los actores. | Ver tabla de convenciones en §3. |
+| 5 | **🛡️ Confirmación humana forzada en código** | El PRD lo pide en el prompt; lo reforcé en el servidor: el modelo **no puede** auto-confirmarse aunque lo intente. | Guardia en `src/agente.ts`. |
+| 6 | **Resiliencia ante el proveedor** | Durante la construcción Gemini tuvo saturación real (error 503). Añadí reintentos, modelo de respaldo y un mensaje claro que conserva lo avanzado. | README · `src/llm/gemini.ts`. |
+| 7 | **Marco de gobierno de datos e IA** ([GOBIERNO.md](GOBIERNO.md)) | Lleva la regla operativa a nivel estratégico: dueño del dato, calidad medible, IA supervisada y hoja de ruta para escalar el patrón a otros flujos documentales. | Documento para la vicepresidencia. |
+| 8 | **Bonus §9.4: módulo reutilizable** con verificación de no divergencia | El agente se puede instalar en otra plataforma de agentes sin nuestro servidor, y nunca queda desactualizado respecto a la app. | `npm run modulo:verificar`. |
+
+---
+
 ## 1. Problema en una frase
 
 Desde el 30 de mayo de 2026 Periferia no sabe con certeza qué contratos tiene vigentes, cuándo vencen ni qué pólizas debe: el maestro dejó de alimentarse cuando se fue la persona que lo llevaba, y a administración solo llegan los contratos que piden póliza.
@@ -59,7 +76,7 @@ El servidor no contiene reglas de negocio: solo expone la API y ejecuta el ciclo
 
 1. Agrega el mensaje del usuario a la sesión (en memoria, por `sessionId`).
 2. **Bucle** con tope de `MAX_ITERACIONES = 25` (CA1): envía prompt + historial + definiciones de herramientas al modelo.
-3. Si el modelo pide herramientas (puede pedir **varias en paralelo**), el backend **valida los argumentos con zod** antes de ejecutar; si no cumplen, devuelve el error al modelo. Cada herramienta devuelve `{ ok, data }` o `{ ok: false, error }` y **nunca lanza**.
+3. Si el modelo pide herramientas (puede pedir **varias en paralelo**), cada herramienta **valida sus argumentos con zod** en una envoltura común (`herramienta()` en `src/lib/contratos-nucleo.ts`) antes de ejecutar; si no cumplen, devuelve el error al modelo. Cada herramienta devuelve `{ ok, data }` o `{ ok: false, error }` y **nunca lanza**.
 4. Cada llamada queda en el historial visible del chat y en `out/log.jsonl` (CA4, RN7).
 5. Si el modelo responde texto sin pedir herramientas, termina el turno. Si llega al tope, responde con lo que hizo y lo que falta.
 
@@ -89,7 +106,7 @@ El servidor no contiene reglas de negocio: solo expone la API y ejecuta el ciclo
 | Semáforo de riesgo | 🔴 crítico: vencido, vence en ≤ 30 días o póliza exigida sin constituir · 🟡 atención: vence en 31–60 días o comercial no registrado · 🟢 al día |
 | Estado de la conversación | Burbuja y caja de texto en ámbar = el agente espera tu confirmación |
 
-**Costo:** tope de iteraciones por turno y de tokens por sesión (`MAX_TOKENS_SESION`), ambos configurables.
+**Costo:** tope de iteraciones por turno, de tokens por sesión (`MAX_TOKENS_SESION`) y **tope global diario** (`MAX_TOKENS_DIA`), más límite de mensajes por IP en el link público y reinicio protegido con `ADMIN_KEY`.
 
 ---
 
@@ -97,7 +114,7 @@ El servidor no contiene reglas de negocio: solo expone la API y ejecuta el ciclo
 
 | Decisión | Detalle |
 |---|---|
-| Proveedor / modelo | **Google Gemini · `gemini-3.8-flash`** (respaldo: `gemini-3-flash-preview`), vía API REST sin SDK. |
+| Proveedor / modelo | **Google Gemini · `gemini-3.8-flash`** (respaldo: `gemini-3.1-flash-lite`, verificado disponible), vía API REST sin SDK. |
 | Por qué | Buena capacidad de *function calling* en paralelo, latencia baja, costo bajo y **nivel gratuito** suficiente para una prueba de concepto. `thinkingLevel: low` y `temperature: 0` porque el modelo solo **orquesta**: no extrae ni calcula. |
 | Independencia | El ciclo solo conoce la interfaz `ProveedorLLM.enviar(sistema, mensajes, herramientas)`. Cambiar a Claude u OpenAI es escribir otro archivo en `src/llm/` y cambiar una línea en `server.ts`. |
 
@@ -163,6 +180,8 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 
 ## 6. Regla de gobierno
 
+> Esta es la regla operativa de una página que pide el PRD. El marco estratégico completo, con roles de gobierno de datos, dimensiones de calidad con sus controles, gobierno de la IA, privacidad, indicadores y hoja de ruta de madurez, está en **[GOBIERNO.md](GOBIERNO.md)**.
+
 **Principio:** un contrato que no está en el maestro no existe para Periferia. El agente es la herramienta; la regla es lo que garantiza que el proceso sobreviva a la rotación de personas.
 
 **Dueño del maestro** (respuesta a la pregunta abierta del PRD §10): como no hay área legal, el dueño es la **analista administrativa**, bajo la **dirección administrativa**, que responde ante gerencia. La analista no revisa cláusulas: responde por la **completitud y la exactitud** del registro. El contenido jurídico sigue siendo responsabilidad de quien firma.
@@ -175,9 +194,9 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 - **Asunto:** `[CONTRATO] <Cliente> - <No. contrato> - <tipo: nuevo|otrosí|terminación|póliza>`. Ejemplo: `[CONTRATO] Minera Los Andes - CT-2026-011 - otrosí`.
 - Un correo por contrato. Si hay anexos de tarifas, van en el mismo correo.
 
-**3. Acuse automático.** En **menos de 15 minutos** el agente responde al remitente con: la clasificación (nuevo, actualización, duplicado o rechazado), el número de contrato registrado y la ruta de archivo, o bien **los campos que quedaron en revisión** y lo que falta. El registro definitivo de lo que queda en revisión lo confirma la analista en **2 días hábiles**. Si el comercial no recibe acuse, el contrato no se considera entregado.
+**3. Acuse automático** *(propuesto para la fase de integración)*. En **menos de 15 minutos** el agente responde al remitente con: la clasificación (nuevo, actualización, duplicado o rechazado), el número de contrato registrado y la ruta de archivo, o bien **los campos que quedaron en revisión** y lo que falta. El registro definitivo de lo que queda en revisión lo confirma la analista en **2 días hábiles**. Si el comercial no recibe acuse, el contrato no se considera entregado.
 
-**4. Excepciones y escalamiento.**
+**4. Excepciones y escalamiento.** *(Regla propuesta. En el agente del reto están implementados el valor indeterminado → revisión y el remitente desconocido → advertencia. La detección de "sin firma" y el acuse automático por correo son parte de la fase de integración de [GOBIERNO.md](GOBIERNO.md) §8.)*
 
 | Caso | Qué hace el agente | Escala a | SLA |
 |---|---|---|---|
@@ -212,7 +231,7 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 | # | Decisión | Alternativa descartada | Por qué |
 |---|---|---|---|
 | 1 | **Extracción 100 % determinista** en código | Que el modelo lea el contrato y devuelva el JSON | Reproducible, auditable, gratis y sin alucinaciones. El PRD exige que `demo.ts` corra sin modelo. Costo: menos flexible ante formatos nuevos → en producción el modelo podría **proponer** valores para campos de baja confianza, siempre vía confirmación humana. |
-| 2 | Las herramientas **re-leen el documento**; el modelo solo pasa `mensaje_id` | Que el modelo reenvíe el contrato completo entre herramientas | Primera versión lo hacía: era lento (~25 s por paso por tokens de salida) y abría la puerta a que el modelo alterara un valor. Ahora el modelo solo puede aportar `correcciones` explícitas con `confirmado: true`. |
+| 2 | Las herramientas **re-leen el documento siempre**; el modelo solo pasa `mensaje_id` y, tras aprobación humana, `correcciones` + `confirmado` | Que el modelo reenvíe el contrato completo entre herramientas | La primera versión lo hacía: era lenta (~25 s por paso) y la auditoría demostró que permitía colar un valor inventado. Ahora, si el modelo envía un contrato distinto al documento, la herramienta lo bloquea como "requiere revisión" (la demo lo prueba con un valor 999999). |
 | 3 | **Guardia de confirmación en código**, no solo en el prompt | Confiar en que el prompt diga "pregunta antes" | Un prompt se puede ignorar; el backend no. El modelo no puede confirmar en el mismo turno en que surgió la duda. |
 | 4 | **Gemini Flash vía REST** con adaptador propio | SDK oficial / framework de agentes (LangChain, etc.) | Menos dependencias, el ciclo se entiende línea por línea y el proveedor es intercambiable. |
 | 5 | HTML plano para el front | React / Next.js | Cero build, se despliega junto al backend, suficiente para el alcance. |
@@ -248,7 +267,7 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 | HU-6 Errores | ✅ Hecho | `{ ok:false, error }`; demo prueba mensaje inexistente, fecha inválida y moneda desconocida; el lote no se aborta |
 | Front con tool calls y confirmación | ✅ Hecho | `web/index.html` |
 | Link público | ✅ Render | Ver README |
-| Bonus módulo reutilizable | ✅ Hecho | `modulo/` con `agent.md`, `tools/contratos.ts` y `skill/registro-contratos/SKILL.md`, **generados** desde las mismas fuentes de la app (`npm run modulo`); `npm run modulo:verificar` falla si divergen |
+| Bonus módulo reutilizable | ✅ Hecho | `modulo/` con `agent.md`, `tools/contratos.ts` (solo las 5 herramientas: cada export es una herramienta), `lib/contratos-nucleo.ts` y `skill/registro-contratos/SKILL.md`, **generados** desde las mismas fuentes de la app (`npm run modulo`); `npm run modulo:verificar` falla si divergen |
 | Avisos proactivos | ✅ Extra | Banda de avisos en el chat + resumen diario con correos simulados a gerencia y comerciales |
 | Tablero de análisis | ✅ Extra | KPIs, 4 gráficas y semáforo por contrato |
 | `contratos_leer_pdf` (P1) | ⏳ No hecho | Opcional |
@@ -263,6 +282,18 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 | **Google Gemini** | Es el modelo que ejecuta el agente en producción (no se usó para construir). |
 
 **Mi rol:** definí el orden de trabajo (núcleo evaluable primero: herramientas + `demo.ts`), fijé los criterios de aceptación con los 6 correos, tomé las decisiones de la §7 y verifiqué cada entrega.
+
+**Control de calidad con un auditor independiente.** Antes de entregar, lancé un segundo agente de IA **que no participó en la construcción** con una sola instrucción: evaluar la solución contra cada criterio del PRD como lo haría Periferia, ejecutando la demo dos veces y buscando defectos. Hallazgos y resolución:
+
+| # | Hallazgo del auditor | Severidad | Resolución |
+|---|---|---|---|
+| D1 | `validar`/`registrar` aceptaban valores enviados por el modelo: se podía registrar msg-006 con valor inventado sin confirmación | Alta (RN5, CA2, CA3) | Las herramientas **siempre** releen el documento; un contrato distinto se bloquea. La demo incluye la prueba del ataque |
+| D2 | `fecha_registro` usaba el reloj real, no la fecha de referencia | Media (determinismo) | Usa `FECHA_REFERENCIA` (la demo fija 2026-09-03) |
+| D3 | El módulo exportaba utilidades que un cargador tomaría como herramientas | Media (bonus) | Núcleo separado en `lib/`; `tools/contratos.ts` exporta solo las 5 herramientas |
+| D4 | El tope de tokens se evadía con otra sesión; el reset era público | Baja | Tope global diario, límite por IP y `ADMIN_KEY` |
+| D5 | Un error al escribir el log podía romper el turno | Baja | Escritura protegida |
+| D6 | Un otrosí de un contrato inexistente fallaba en vez de rechazarse | Baja | Se clasifica `rechazado` con motivo |
+| — | Afirmaciones del documento más fuertes que el código | — | Corregidas (excepciones y acuse marcados como propuesta) |
 
 **Qué descarté de lo que propuso la IA y por qué:**
 - La primera versión del ciclo hacía que el modelo reenviara el contrato completo entre herramientas: la descarté al medir ~25 s por paso y por el riesgo de que el modelo alterara valores (decisión 2).
