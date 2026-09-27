@@ -53,6 +53,7 @@ function resumir(resultado: string): { ok: boolean; resumen: string; datos: unkn
     typeof d?.clasificacion === "string" ? `${d.clasificacion}${Array.isArray(d.requiere_revision) && d.requiere_revision.length ? ` · revisar: ${d.requiere_revision.join(", ")}` : ""}` :
     typeof d?.accion === "string" ? `${d.accion}${d.id_contrato ? ` · ${String(d.id_contrato)}` : ""}` :
     Array.isArray(d?.mensajes) ? `${d.mensajes.length} mensajes pendientes` :
+    typeof d?.caracteres === "number" ? `${d.caracteres} caracteres extraídos de ${String(d.ruta)}` :
     typeof d?.ruta === "string" ? `reporte en ${d.ruta}` : "ok"
   return { ok: true, resumen, datos: r }
 }
@@ -110,15 +111,20 @@ export async function ejecutarTurno(
 
       if (!h) {
         resultado = JSON.stringify({ ok: false, error: `La herramienta ${llamada.nombre} no existe` })
-      } else if (llamada.nombre === "contratos_registrar" && llamada.argumentos.confirmado === true && !confirmables.has(mensajeId)) {
-        // Guardia en código: el modelo no puede auto-confirmarse en el mismo turno en que detecta la duda.
-        resultado = JSON.stringify({ ok: false, error: `confirmado=true no es válido para ${mensajeId}: primero debes preguntarle al usuario y esperar su respuesta en el siguiente mensaje` })
+      } else if (llamada.nombre === "contratos_registrar" && llamada.argumentos.correcciones && !confirmables.has(mensajeId)) {
+        // Guardia en código: nadie puede cambiar valores de un mensaje que no quedó pendiente en un turno ANTERIOR.
+        resultado = JSON.stringify({ ok: false, error: `correcciones no válidas para ${mensajeId}: primero debes preguntarle al usuario y esperar su respuesta en el siguiente mensaje` })
       } else {
+        // Guardia en código (CA3): "confirmado" solo vale para lo que quedó pendiente en un turno anterior.
+        // Si el modelo lo envía en otro caso, se ignora; si el mensaje tiene campos dudosos, registrar igual se detendrá.
+        const args = llamada.nombre === "contratos_registrar" && llamada.argumentos.confirmado === true && !confirmables.has(mensajeId)
+          ? { ...llamada.argumentos, confirmado: false }
+          : llamada.argumentos
         // Los argumentos llegan sin tipo desde el modelo; cada herramienta los valida con zod antes de ejecutar.
-        resultado = await (h.execute as (a: Record<string, unknown>, c: typeof ctx) => Promise<string>)(llamada.argumentos, ctx)
+        resultado = await (h.execute as (a: Record<string, unknown>, c: typeof ctx) => Promise<string>)(args, ctx)
       }
       // CA4: las llamadas que el ciclo rechaza antes de ejecutar también quedan en el log.
-      if (!h || resultado.includes("confirmado=true no es válido")) {
+      if (!h || resultado.includes("correcciones no válidas")) {
         const error = (JSON.parse(resultado) as { error: string }).error
         await fs.mkdir(path.join(config.directorio, "out"), { recursive: true })
           .then(() => fs.appendFile(path.join(config.directorio, "out/log.jsonl"), JSON.stringify({

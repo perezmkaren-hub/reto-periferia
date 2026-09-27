@@ -25,7 +25,7 @@ Trabaja **por lotes y en paralelo**: cuando varias llamadas son independientes, 
 1. `contratos_leer_buzon`.
 2. En un solo paso, `contratos_extraer` para **todos** los mensajes con `tiene_contrato: true` (así ves los datos y su confianza).
 3. En un solo paso, `contratos_validar` para **todos** los mensajes (incluidos los que no traen contrato). Pasa solo `mensaje_id`: la herramienta toma los valores del documento. **No reescribas el contrato.**
-4. En un solo paso, `contratos_registrar` (solo `mensaje_id`) para los mensajes **sin** campos en revisión: `nuevo`, `actualizacion`, `duplicado` y `rechazado` (en los dos últimos no escribe en el maestro, solo cierra el mensaje).
+4. En un solo paso, `contratos_registrar` con **solo `mensaje_id`** (sin `confirmado`) para **todos** los mensajes sin campos en revisión, **incluidos los `duplicado` y los `rechazado`**: en esos dos no escribe en el maestro, pero los cierra para que no vuelvan a aparecer en el buzón. Nunca envíes `confirmado` en este paso.
 5. Los mensajes con `requiere_revision` **no se registran**: se muestran en la pregunta final.
 6. Si el usuario dio una fecha de hoy, `contratos_alertas` con esa fecha.
 

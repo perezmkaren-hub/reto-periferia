@@ -101,7 +101,7 @@ Cada etapa tiene un responsable (§2), un control (§3) y un indicador (§7).
 |---|---|---|---|
 | **1. Estabilizar** | Mes 1 | Regla de gobierno firmada, canal único, agente en piloto paralelo al proceso manual, campaña de cierre del gap jun–ago | Maestro completo y al día |
 | **2. Integrar** | Meses 2–3 | Conexión real con Exchange y SharePoint (Microsoft Graph), envío real de avisos por correo/Teams, OCR para escaneados | El proceso corre solo; la analista solo gestiona excepciones |
-| **3. Explotar el dato** | Meses 4–6 | Cruce con facturación y cartera, tablero ejecutivo para la vicepresidencia, alertas de renovación comercial | El maestro pasa de registro a **herramienta de decisión** |
+| **3. Explotar el dato** | Meses 4–6 | Conectar el tablero ejecutivo (ya prototipado en esta solución: valor en riesgo, pipeline de renovación, concentración, decisiones) con facturación y cartera reales y con la TRM oficial; alertas de renovación comercial | El maestro pasa de registro a **herramienta de decisión** |
 | **4. Escalar el modelo** | Mes 6+ | Replicar el patrón (canal único + agente + gobierno) en otros documentos: órdenes de compra, pólizas, actas, proveedores | Un **modelo de gobierno reutilizable** para la organización |
 
 La fase 4 es el verdadero retorno: **el patrón es reutilizable**. Este caso es la prueba de concepto de cómo Periferia puede gobernar cualquier flujo documental con IA.

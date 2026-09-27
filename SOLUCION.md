@@ -11,9 +11,9 @@ El PRD pide un agente que registre contratos y genere alertas **cuando se le pid
 
 | # | Plus | Qué problema del negocio resuelve | Cómo verlo en la demo |
 |---|---|---|---|
-| 1 | **🔔 Aviso proactivo en el chat** | La analista no tiene que preguntar: al abrir la aplicación ve de inmediato qué está en riesgo. Se actualiza tras cada acción del agente. | Abrir el link: la banda roja/ámbar arriba del chat. Clic → tablero. |
+| 1 | **🔔 Aviso proactivo en el chat** | La analista no tiene que preguntar: al abrir la aplicación ve de inmediato qué está en riesgo. Se actualiza tras cada acción del agente, y un clic abre el tablero. El chat muestra además los segundos transcurridos mientras el agente trabaja. | Abrir el link: la banda roja/ámbar arriba del chat. Clic → tablero. |
 | 2 | **⏰ Resumen diario automático** | Gerencia y comerciales reciben su parte sin entrar a ningún sistema. Cada comercial recibe **solo sus** pendientes (prórroga, acta de terminación, póliza). | `out/bandeja-salida/<fecha>/gerencia.md` y un archivo por comercial. En producción: envío real por Microsoft Graph (correo/Teams). |
-| 3 | **📊 Tablero del portafolio en dos niveles** | **Vista ejecutiva (vicepresidencia):** valor del portafolio vigente consolidado en COP, **valor en riesgo crítico**, valor que vence en 90 días, **valor sin garantía constituida**, concentración en el cliente principal, **pipeline de renovación por trimestre**, valor por nivel de riesgo, concentración por cliente, valor por comercial y una lista de **decisiones que requieren a la dirección**, generada automáticamente con responsable y monto. **Vista operativa (analista):** conteos, vencimientos por mes, país, estado de pólizas y semáforo por contrato. Todas las gráficas muestran sus cifras y porcentajes. Sin costo de modelo. | Botón **📊 Tablero**. |
+| 3 | **📊 Tablero del portafolio con dos vistas (pestañas)** | El mismo dato para dos audiencias, una pestaña para cada una. **🏛️ Vista ejecutiva (vicepresidencia):** valor del portafolio vigente consolidado en COP, **valor en riesgo crítico**, valor que vence en 90 días, **valor sin garantía constituida**, concentración en el cliente principal, **pipeline de renovación por trimestre**, valor por nivel de riesgo, concentración por cliente, valor por comercial y una lista de **decisiones que requieren a la dirección**, generada automáticamente con responsable y monto. **🛠️ Vista operativa (analista):** conteos, vencimientos por mes, país, estado de pólizas y semáforo por contrato. Todas las gráficas muestran sus cifras, y las circulares también el porcentaje. Sin costo de modelo. | Botón **📊 Tablero** → pestañas **🏛️ Vista ejecutiva** / **🛠️ Vista operativa**. |
 | 4 | **🚦 Semáforo y convenciones de color** en chat, maestro, tablero, alertas y correos | Prioriza la acción: lo rojo primero. Un mismo lenguaje visual para todos los actores. | Ver tabla de convenciones en §3. |
 | 5 | **🛡️ Confirmación humana forzada en código** | El PRD lo pide en el prompt; lo reforcé en el servidor: el modelo **no puede** auto-confirmarse aunque lo intente. | Guardia en `src/agente.ts`. |
 | 6 | **Resiliencia ante el proveedor** | Durante la construcción Gemini tuvo saturación real (error 503). Añadí reintentos, modelo de respaldo y un mensaje claro que conserva lo avanzado. | README · `src/llm/gemini.ts`. |
@@ -44,7 +44,7 @@ Desde el 30 de mayo de 2026 Periferia no sabe con certeza qué contratos tiene v
 │   - tool calls 🔧    │ reply, toolCalls, │  │    ├─ Adaptador LLM (src/llm/adapter.ts)│
 │   - ⏸ confirmación   │ needsConfirmation │  │    │    └─ Gemini (src/llm/gemini.ts)    │
 │ · 🔔 aviso proactivo │ ◀── GET /api/avisos ─┤  │    └─ Herramientas zod (src/tools/)   │
-│ · 📊 tablero         │ ◀── GET /api/out/…  ─┤  └─ Avisos (src/avisos.ts) ⏰ cada 24 h  │
+│ · 📊 tablero 2 vistas│ ◀── GET /api/out/…  ─┤  └─ Avisos (src/avisos.ts) ⏰ cada 24 h  │
 └──────────────────────┘                   └───────────┬─────────────────┬──────────────┘
                                                        │                 │
                                            fixtures/ (solo lectura)   out/ (escritura)
@@ -57,7 +57,7 @@ Desde el 30 de mayo de 2026 Periferia no sabe con certeza qué contratos tiene v
 modulo/  ← generado desde agent/prompt.md + src/tools/contratos.ts + src/knowledge/ (bonus §9.4)
 ```
 
-**Capa de análisis (valor agregado):** el agente deja el maestro estructurado, así que el front incluye un **📊 Tablero** que lo analiza sin pasar por el modelo (costo cero), en dos niveles. La **vista ejecutiva** habla en dinero y decisiones: valor vigente, valor en riesgo, valor sin garantía, pipeline de renovación por trimestre, concentración por cliente y la lista de decisiones para la dirección. La **vista operativa** habla en contratos y tareas: conteos, vencimientos por mes, pólizas y semáforo por contrato. Los valores en distintas monedas se consolidan en COP con tasas de referencia declaradas como supuesto (en producción, la TRM oficial del día). Responde de un vistazo la pregunta de gerencia del PRD: *"¿qué contratos vencen este trimestre?"*.
+**Capa de análisis (valor agregado):** el agente deja el maestro estructurado, así que el front incluye un **📊 Tablero** que lo analiza sin pasar por el modelo (costo cero), con **dos pestañas**. La **🏛️ vista ejecutiva** habla en dinero y decisiones: valor vigente, valor en riesgo, valor sin garantía, pipeline de renovación por trimestre, concentración por cliente y la lista de decisiones para la dirección. La **🛠️ vista operativa** habla en contratos y tareas: conteos, vencimientos por mes, pólizas y semáforo por contrato. Los valores en distintas monedas se consolidan en COP con tasas de referencia declaradas como supuesto (en producción, la TRM oficial del día). Responde de un vistazo la pregunta de gerencia del PRD: *"¿qué contratos vencen este trimestre?"*.
 
 **Separación que pide el PRD (§6.5):**
 
@@ -86,7 +86,7 @@ El servidor no contiene reglas de negocio: solo expone la API y ejecuta el ciclo
 | Capa | Mecanismo |
 |---|---|
 | Herramienta | `contratos_registrar` **re-valida** y rechaza con "requiere revisión: …" si hay campos < 0.8 y no viene `confirmado: true`. |
-| Ciclo (código) | El backend **bloquea** `confirmado: true` para un mensaje que no quedó pendiente en un turno **anterior**. El modelo no puede auto-confirmarse en el mismo turno en que detecta la duda. |
+| Ciclo (código) | `confirmado` y `correcciones` solo valen para un mensaje que quedó pendiente en un turno **anterior**. Si el modelo envía `confirmado: true` en otro caso, el backend lo **anula** antes de ejecutar (y `registrar` vuelve a detenerse si hay campos dudosos); si envía `correcciones`, se **rechazan**. El modelo no puede auto-confirmarse en el mismo turno en que detecta la duda. |
 | Interfaz | La respuesta trae `needsConfirmation: true` y el chat resalta la burbuja y la caja de texto en ámbar ("⏸ El agente necesita tu confirmación"). |
 
 **Errores (CA5):** reintentos automáticos ante saturación del proveedor (429/503) con modelo de respaldo, timeout configurable, y si aun así falla, el agente responde en lenguaje claro qué alcanzó a hacer y la sesión sigue viva ("escríbeme *continúa*").
@@ -272,7 +272,7 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 | Link público | ✅ Render | Ver README |
 | Bonus módulo reutilizable | ✅ Hecho | `modulo/` con `agent.md`, `tools/contratos.ts` (solo las 6 herramientas: cada export es una herramienta), `lib/contratos-nucleo.ts` y `skill/registro-contratos/SKILL.md`, **generados** desde las mismas fuentes de la app (`npm run modulo`); `npm run modulo:verificar` falla si divergen |
 | Avisos proactivos | ✅ Extra | Banda de avisos en el chat + resumen diario con correos simulados a gerencia y comerciales |
-| Tablero de análisis | ✅ Extra | KPIs, 4 gráficas y semáforo por contrato |
+| Tablero de análisis | ✅ Extra | Dos pestañas. **Vista ejecutiva:** 6 indicadores en dinero (valor vigente, en riesgo, que vence en 90 días, sin garantía, concentración, gap), decisiones para la dirección y 4 gráficas (pipeline por trimestre, riesgo, concentración por cliente, valor por comercial). **Vista operativa:** conteos, 3 gráficas y semáforo por contrato. Todas con cifras visibles |
 | `contratos_leer_pdf` (P1 opcional) | ✅ Hecho | Lee PDF nativo con `unpdf`, reconstruye párrafos y cláusulas, y solo acepta rutas dentro de `fixtures/`, `ejemplos/` u `out/` (máx. 10 MB). Un PDF escaneado responde "requiere OCR" en vez de inventar. `contratos_extraer` usa el PDF automáticamente si el adjunto es `.pdf`. La demo prueba que `ejemplos/contrato-CT-2026-015.pdf` da **los mismos 11 campos** que el `.txt` de msg-001 |
 
 ---
@@ -297,6 +297,8 @@ Campos ausentes → `null` con confianza 0, nunca inventados. Todo campo < **0.8
 | D5 | Un error al escribir el log podía romper el turno | Baja | Escritura protegida |
 | D6 | Un otrosí de un contrato inexistente fallaba en vez de rechazarse | Baja | Se clasifica `rechazado` con motivo |
 | — | Afirmaciones del documento más fuertes que el código | — | Corregidas (excepciones y acuse marcados como propuesta) |
+
+**Prueba en vivo en el link público.** La prueba final con Gemini mostró que el modelo intentaba enviar `confirmado: true` en contratos que no lo necesitaban. La guardia lo bloqueaba, pero dejaba errores en el historial. Ajuste: el backend **anula** ese `confirmado` y la herramienta decide (si hubiera campos dudosos, igual se detiene). También reforcé en el prompt que los duplicados y rechazados se cierren en el mismo paso.
 
 **Qué descarté de lo que propuso la IA y por qué:**
 - La primera versión del ciclo hacía que el modelo reenviara el contrato completo entre herramientas: la descarté al medir ~25 s por paso y por el riesgo de que el modelo alterara valores (decisión 2).
