@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agente de Contratos</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085; --border: #e2e5eb;
+    --accent: #2f5bea; --user: #2f5bea; --ok: #1f8a5b; --err: #c43d3d; --warn-bg: #fff6e0; --warn: #b7791f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 17px; margin: 0; }
+  header small { color: var(--muted); display: block; font-size: 12px; }
+  header .acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button.primario { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  main { max-width: 920px; margin: 0 auto; padding: 20px 16px 160px; }
+  .msg { margin: 14px 0; padding: 12px 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); overflow-x: auto; }
+  .msg.usuario { background: var(--user); color: #fff; border: none; margin-left: 15%; white-space: pre-wrap; }
+  .msg.error { border-color: var(--err); color: var(--err); }
+  .msg.confirmar { border: 2px solid var(--warn); background: var(--warn-bg); }
+  .msg.confirmar::before { content: "⏸ El agente necesita tu confirmación antes de registrar"; display: block; font-weight: 600; color: var(--warn); margin-bottom: 8px; }
+  .msg table { border-collapse: collapse; font-size: 13.5px; margin: 8px 0; }
+  .msg th, .msg td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .msg th { background: #f0f2f6; }
+  details.tool { margin: 6px 0 6px 24px; background: #fbfbfd; border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+  details.tool summary { cursor: pointer; list-style: none; }
+  details.tool summary::before { content: "🔧 "; }
+  details.tool .nombre { font-family: ui-monospace, monospace; font-weight: 600; }
+  details.tool .ok { color: var(--ok); } details.tool .fallo { color: var(--err); }
+  details.tool pre { white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; background: #f3f4f7; padding: 8px; border-radius: 6px; }
+  .pensando { color: var(--muted); font-style: italic; margin: 10px 0 10px 24px; }
+  .pensando::after { content: "…"; animation: puntos 1.2s infinite; }
+  @keyframes puntos { 0% { content: "."; } 33% { content: ".."; } 66% { content: "..."; } }
+  form { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel); border-top: 1px solid var(--border); padding: 12px 16px; }
+  form .fila { max-width: 920px; margin: 0 auto; display: flex; gap: 8px; }
+  textarea { flex: 1; font: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 10px; resize: none; height: 64px; }
+  form.confirmando textarea { border: 2px solid var(--warn); background: var(--warn-bg); }
+  .sugerencias { max-width: 920px; margin: 0 auto 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .sugerencias button { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; }
+  .vacio { color: var(--muted); text-align: center; margin-top: 60px; }
+  @media (max-width: 600px) { .msg.usuario { margin-left: 0; } header { flex-direction: column; align-items: flex-start; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>📑 Agente de Registro de Contratos Vigentes</h1>
+    <small id="estado">Conectando…</small>
+  </div>
+  <div class="acciones">
+    <button id="verAlertas" title="Ver out/alertas.md">Ver alertas</button>
+    <button id="verMaestro" title="Ver el maestro actual">Ver maestro</button>
+    <button id="reiniciar" title="Borra out/ y empieza de cero">Reiniciar demo</button>
+  </div>
+</header>
+
+<main id="chat">
+  <div class="vacio" id="vacio">Escribe una instrucción o usa una sugerencia. Cada llamada a herramienta se verá aquí.</div>
+</main>
+
+<form id="form">
+  <div class="sugerencias" id="sugerencias">
+    <button type="button" data-texto="Procesa el buzón de contratos con fecha de hoy 2026-09-03. Registra lo que esté limpio, muéstrame lo que requiere revisión campo por campo y termina con el reporte de alertas. No registres nada dudoso sin preguntarme.">▶ Procesar buzón (demo)</button>
+    <button type="button" data-texto="Confirmo el valor 0 y la fecha fin 2027-08-31 para msg-006. Regístralo.">✔ Confirmar msg-006</button>
+    <button type="button" data-texto="¿Qué contratos vencen en los próximos 60 días con fecha 2026-09-03?">¿Qué vence pronto?</button>
+  </div>
+  <div class="fila">
+    <textarea id="entrada" placeholder="Escribe tu mensaje… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
+    <button class="primario" id="enviar" type="submit">Enviar</button>
+  </div>
+</form>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+  const chat = $("chat"), entrada = $("entrada"), form = $("form"), boton = $("enviar")
+  let sessionId = sessionStorage.getItem("sessionId") || crypto.randomUUID()
+  sessionStorage.setItem("sessionId", sessionId)
+
+  const escapar = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+  const agregar = (el) => { $("vacio")?.remove(); chat.appendChild(el); window.scrollTo(0, document.body.scrollHeight) }
+
+  function burbuja(clase, html) {
+    const d = document.createElement("div")
+    d.className = "msg " + clase
+    d.innerHTML = html
+    agregar(d)
+    return d
+  }
+
+  function herramienta(t) {
+    const d = document.createElement("details")
+    d.className = "tool"
+    d.innerHTML = `<summary><span class="nombre">${escapar(t.nombre)}</span>(${escapar(JSON.stringify(t.argumentos.mensaje_id ?? t.argumentos.hoy ?? ""))})
+      → <span class="${t.ok ? "ok" : "fallo"}">${t.ok ? "✓" : "✗"} ${escapar(t.resumen)}</span></summary>
+      <b>Argumentos</b><pre>${escapar(JSON.stringify(t.argumentos, null, 2))}</pre>
+      <b>Resultado</b><pre>${escapar(JSON.stringify(t.resultado, null, 2))}</pre>`
+    agregar(d)
+  }
+
+  function modoConfirmacion(activo) { form.classList.toggle("confirmando", activo) }
+
+  async function enviar(texto) {
+    if (!texto.trim()) return
+    burbuja("usuario", escapar(texto))
+    entrada.value = ""
+    boton.disabled = true
+    const pensando = document.createElement("div")
+    pensando.className = "pensando"
+    pensando.textContent = "El agente está pensando y usando herramientas"
+    agregar(pensando)
+    try {
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, message: texto }) })
+      const r = await res.json()
+      pensando.remove()
+      if (!r.ok) { burbuja("error", "⚠️ " + escapar(r.error)); return }
+      r.toolCalls.forEach(herramienta)
+      burbuja(r.needsConfirmation ? "confirmar" : "", marked.parse(r.reply))
+      modoConfirmacion(r.needsConfirmation)
+      $("estado").textContent = `${estadoBase} · ${r.tokensUsados.toLocaleString("es-CO")} tokens en esta sesión`
+    } catch (e) {
+      pensando.remove()
+      burbuja("error", "⚠️ No se pudo contactar al servidor. Intenta de nuevo.")
+    } finally {
+      boton.disabled = false
+      entrada.focus()
+    }
+  }
+
+  async function verArchivo(ruta, titulo) {
+    const res = await fetch("/api/out/" + ruta)
+    const txt = await res.text()
+    if (!res.ok) { burbuja("error", "⚠️ " + escapar(JSON.parse(txt).error)); return }
+    const cuerpo = ruta.endsWith(".csv") ? csvATabla(txt) : marked.parse(txt)
+    burbuja("", `<b>${titulo}</b>` + cuerpo)
+  }
+  function csvATabla(csv) {
+    const filas = csv.trim().split("\n").map((l) => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g).slice(0, -1).map((c) => c.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"')))
+    const cols = ["id_contrato", "cliente", "valor", "moneda", "fecha_inicio", "fecha_fin", "estado_poliza", "comercial", "fuente"]
+    const idx = cols.map((c) => filas[0].indexOf(c))
+    return `<table><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>${filas.slice(1).map((f) => `<tr>${idx.map((i) => `<td>${escapar(f[i] ?? "")}</td>`).join("")}</tr>`).join("")}</table>`
+  }
+
+  form.addEventListener("submit", (e) => { e.preventDefault(); enviar(entrada.value) })
+  entrada.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(entrada.value) } })
+  $("sugerencias").addEventListener("click", (e) => { const t = e.target.dataset?.texto; if (t) enviar(t) })
+  $("verAlertas").onclick = () => verArchivo("alertas.md", "📄 out/alertas.md")
+  $("verMaestro").onclick = () => verArchivo("sharepoint/maestro-contratos.csv", "📊 Maestro de contratos (out/sharepoint)")
+  $("reiniciar").onclick = async () => {
+    if (!confirm("¿Borrar out/ y empezar la demo desde cero?")) return
+    await fetch("/api/reset", { method: "POST" })
+    sessionId = crypto.randomUUID(); sessionStorage.setItem("sessionId", sessionId)
+    chat.innerHTML = '<div class="vacio" id="vacio">Demo reiniciada. El maestro volvió al estado del 2026-05-30.</div>'
+    modoConfirmacion(false)
+  }
+
+  let estadoBase = ""
+  fetch("/api/health").then((r) => r.json()).then((h) => {
+    estadoBase = `Modelo: ${h.provider} · ${h.model}${h.llave_configurada ? "" : " · ⚠️ sin clave configurada"}`
+    $("estado").textContent = estadoBase
+  })
+</script>
+</body>
+</html>
