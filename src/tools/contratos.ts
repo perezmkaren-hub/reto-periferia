@@ -471,6 +471,29 @@ async function leerAdjuntoContrato(dir: string, correo: Correo): Promise<{ nombr
   return { nombre, texto }
 }
 
+const CONTRATO_VACIO: Contrato = {
+  id_contrato: null, cliente: null, nit_cliente: null, pais: null, objeto: null, valor: null,
+  valor_indeterminado: false, moneda: null, fecha_inicio: null, fecha_fin: null,
+  requiere_poliza: null, tipo_poliza: "", es_otrosi: false, confianza: {},
+}
+
+// La fuente de los valores es siempre el documento: el modelo no necesita (ni puede) reescribirlos.
+async function contratoDelMensaje(dir: string, correo: Correo): Promise<Contrato> {
+  const adjunto = await leerAdjuntoContrato(dir, correo)
+  return adjunto ? extraerDeTexto(adjunto.texto) : CONTRATO_VACIO
+}
+
+const CorreccionesSchema = z.object({
+  valor: z.number().optional().describe("Valor confirmado por el usuario"),
+  moneda: z.enum(MONEDAS).optional().describe("Moneda confirmada"),
+  fecha_inicio: fecha.optional().describe("Fecha inicio confirmada YYYY-MM-DD"),
+  fecha_fin: fecha.optional().describe("Fecha fin confirmada YYYY-MM-DD"),
+  requiere_poliza: z.boolean().optional().describe("Si requiere póliza, confirmado"),
+  cliente: z.string().optional().describe("Razón social confirmada"),
+  nit_cliente: z.string().optional().describe("NIT confirmado"),
+  objeto: z.string().max(200).optional().describe("Objeto confirmado"),
+})
+
 // ─── Envoltura común: valida args, registra log (RN7/CA4), nunca lanza ────────
 
 type Herramienta<S extends z.ZodRawShape> = {
@@ -560,16 +583,12 @@ export const validar = herramienta(
   "Clasifica un contrato extraído como nuevo, actualizacion, duplicado o rechazado contra el maestro, y lista los campos que requieren revisión humana.",
   {
     mensaje_id: z.string().describe("Id del mensaje del buzón"),
-    contrato: ContratoSchema.nullable().describe("Contrato devuelto por contratos_extraer; null si el mensaje no trae contrato"),
+    contrato: ContratoSchema.nullable().optional().describe("Opcional. Si se omite, la herramienta extrae el contrato del mensaje (recomendado)"),
   },
   async ({ mensaje_id, contrato }, ctx) => {
     const correo = await leerCorreo(ctx.directory, mensaje_id)
-    const vacio: Contrato = {
-      id_contrato: null, cliente: null, nit_cliente: null, pais: null, objeto: null, valor: null,
-      valor_indeterminado: false, moneda: null, fecha_inicio: null, fecha_fin: null,
-      requiere_poliza: null, tipo_poliza: "", es_otrosi: false, confianza: {},
-    }
-    const v = await clasificar(ctx.directory, correo, contrato ?? vacio)
+    const c = contrato ?? (await contratoDelMensaje(ctx.directory, correo))
+    const v = await clasificar(ctx.directory, correo, c)
     return { data: v, resumen: `${v.clasificacion}${v.requiere_revision.length ? ` · revisar: ${v.requiere_revision.join(", ")}` : ""}` }
   },
 )
@@ -579,17 +598,20 @@ export const registrar = herramienta(
   "Registra o actualiza el contrato en el maestro de SharePoint y archiva el documento; si hay campos en revisión solo escribe con confirmado=true.",
   {
     mensaje_id: z.string().describe("Id del mensaje del buzón"),
-    contrato: ContratoSchema.nullable().describe("Contrato extraído (con los valores confirmados por el usuario, si los hubo)"),
+    contrato: ContratoSchema.nullable().optional().describe("Opcional. Si se omite, la herramienta extrae el contrato del mensaje (recomendado)"),
+    correcciones: CorreccionesSchema.optional().describe("Valores que el usuario confirmó o corrigió en el chat, solo con confirmado=true"),
     confirmado: z.boolean().optional().describe("true solo si el usuario confirmó explícitamente los campos en revisión"),
   },
-  async ({ mensaje_id, contrato, confirmado }, ctx) => {
+  async ({ mensaje_id, contrato, correcciones, confirmado }, ctx) => {
     const dir = ctx.directory
     const correo = await leerCorreo(dir, mensaje_id)
     const procesados = await leerProcesados(dir)
     if (procesados[mensaje_id]) throw new Error(`El mensaje ${mensaje_id} ya fue procesado (${procesados[mensaje_id]})`)
 
     // Se vuelve a validar aquí: registrar nunca confía en una clasificación hecha antes.
-    const c = contrato ?? extraerDeTexto("")
+    const base = contrato ?? (await contratoDelMensaje(dir, correo))
+    if (correcciones && confirmado !== true) throw new Error("Las correcciones solo se aceptan con confirmado=true")
+    const c: Contrato = correcciones ? { ...base, ...correcciones, confianza: { ...base.confianza, ...Object.fromEntries(Object.keys(correcciones).map((k) => [k, 1])) } } : base
     const v = await clasificar(dir, correo, c)
 
     if (v.clasificacion === "rechazado" || v.clasificacion === "duplicado") {

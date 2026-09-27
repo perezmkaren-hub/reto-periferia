@@ -35,6 +35,7 @@ export class GeminiLLM implements ProveedorLLM {
       } catch (e) {
         ultimoError = e instanceof Error ? e : new Error(String(e))
         if (!/respondió (429|500|503)/.test(ultimoError.message)) throw ultimoError
+        console.warn(`[llm] intento ${i + 1} con ${modelo} falló: ${ultimoError.message.slice(0, 120)}`)
         await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
       }
     }

@@ -51,9 +51,9 @@ async function main() {
 
   // Segunda pasada: el humano confirma uno de los pendientes.
   for (const p of pendientes) {
-    console.log(`── Segunda pasada ${p.id}: el usuario confirma ${p.revisar.join(", ")} (valor ${p.contrato.valor}, fecha_fin ${p.contrato.fecha_fin})`)
+    console.log(`── Segunda pasada ${p.id}: el usuario confirma ${p.revisar.join(", ")} → valor 0, fecha_fin 2027-08-31`)
     const reg = parse<{ accion: string; id_contrato: string; ruta_archivo: string }>(
-      await registrar.execute({ mensaje_id: p.id, contrato: p.contrato, confirmado: true }, ctx),
+      await registrar.execute({ mensaje_id: p.id, correcciones: { valor: 0, fecha_fin: "2027-08-31" }, confirmado: true }, ctx),
     )
     console.log(reg.ok ? `   acción:         ${reg.data.accion} → ${reg.data.ruta_archivo}\n` : `   ❌ ${reg.error}\n`)
   }
