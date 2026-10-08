@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import tsx --test tests/*.test.ts",
     "demo": "tsx demo.ts",
     "dev": "tsx src/server.ts",
     "start": "tsx src/server.ts",

@@ -91,8 +91,12 @@ app.get("/api/sessions/:id", (c) => {
 
 // Reinicia el SharePoint simulado para repetir la demo desde cero.
 app.post("/api/reset", async (c) => {
+  // Protegido por defecto: con ADMIN_KEY se exige la clave; sin ella, solo se permite desde la propia máquina.
   const clave = process.env.ADMIN_KEY
-  if (clave && c.req.header("x-admin-key") !== clave) return c.json({ ok: false, error: "Se requiere la clave de administración para reiniciar" }, 401)
+  const local = ["127.0.0.1", "::1", "localhost"].includes(new URL(c.req.url).hostname) && !c.req.header("x-forwarded-for")
+  if (clave ? c.req.header("x-admin-key") !== clave : !local) {
+    return c.json({ ok: false, error: clave ? "Se requiere la clave de administración para reiniciar" : "Reinicio deshabilitado: configure ADMIN_KEY en el servidor" }, 401)
+  }
   await fs.rm(path.join(directorio, "out"), { recursive: true, force: true })
   sesiones.clear()
   return c.json({ ok: true })

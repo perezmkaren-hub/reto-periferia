@@ -233,7 +233,7 @@
       const clave = prompt("Clave de administración para reiniciar la demo:")
       if (!clave) return
       res = await fetch("/api/reset", { method: "POST", headers: { "x-admin-key": clave } })
-      if (!res.ok) { alert("Clave incorrecta"); return }
+      if (!res.ok) { alert((await res.json().catch(() => ({}))).error ?? "No autorizado"); return }
     }
     sessionId = crypto.randomUUID(); sessionStorage.setItem("sessionId", sessionId)
     chat.innerHTML = '<div class="vacio" id="vacio">Demo reiniciada. El maestro volvió al estado del 2026-05-30.</div>'
